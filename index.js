@@ -111,6 +111,7 @@ class ScorpionRules {
 
   /** @param {BoardState} state */
   static removeCompletedRuns(state) {
+    let removed = 0;
     for (let col = 0; col < state.columns.length; col += 1) {
       const pile = state.columns[col];
       if (pile.length < 13) continue;
@@ -126,11 +127,14 @@ class ScorpionRules {
       if (ok) {
         pile.splice(start, 13);
         state.completed += 1;
+        removed += 1;
         if (pile.length > 0 && !pile[pile.length - 1].faceUp) {
           pile[pile.length - 1].faceUp = true;
         }
       }
     }
+
+    return removed;
   }
 }
 
@@ -143,8 +147,23 @@ class GameEngine {
     /** @type {BoardState[]} */
     this.history = [];
     this.moves = 0;
+    this.score = 0;
     this.startedAt = Date.now();
     this.gameState = 'playing';
+  }
+
+  countFaceDownTableau() {
+    let hidden = 0;
+    for (const col of this.state.columns) {
+      for (const card of col) {
+        if (!card.faceUp) hidden += 1;
+      }
+    }
+    return hidden;
+  }
+
+  countEmptyColumns() {
+    return this.state.columns.filter((col) => col.length === 0).length;
   }
 
   createShuffledDeck(seed = Date.now()) {
@@ -197,6 +216,7 @@ class GameEngine {
     this.initialState = this.state.clone();
     this.history = [];
     this.moves = 0;
+    this.score = 0;
     this.startedAt = Date.now();
     this.gameState = 'playing';
   }
@@ -205,17 +225,24 @@ class GameEngine {
     this.state = this.initialState.clone();
     this.history = [];
     this.moves = 0;
+    this.score = 0;
     this.startedAt = Date.now();
     this.gameState = 'playing';
   }
 
   pushHistory() {
-    this.history.push(this.state.clone());
+    this.history.push({
+      state: this.state.clone(),
+      score: this.score,
+    });
   }
 
   /** @param {number} fromCol @param {number} fromIndex @param {number} toCol */
   moveStack(fromCol, fromIndex, toCol) {
     if (!ScorpionRules.canMove(this.state.columns, fromCol, fromIndex, toCol)) return false;
+
+    const beforeHidden = this.countFaceDownTableau();
+    const beforeEmpty = this.countEmptyColumns();
 
     this.pushHistory();
     const source = this.state.columns[fromCol];
@@ -227,13 +254,23 @@ class GameEngine {
     }
 
     this.moves += 1;
-    ScorpionRules.removeCompletedRuns(this.state);
+    const removedRuns = ScorpionRules.removeCompletedRuns(this.state);
+    const revealed = Math.max(0, beforeHidden - this.countFaceDownTableau());
+    const emptiesMade = Math.max(0, this.countEmptyColumns() - beforeEmpty);
+
+    this.score += 12;
+    this.score += revealed * 55;
+    this.score += emptiesMade * 35;
+    this.score += removedRuns * 300;
+
     this.syncGameState();
     return true;
   }
 
   dealStock() {
     if (this.state.stock.length < 3) return false;
+
+    const beforeHidden = this.countFaceDownTableau();
 
     this.pushHistory();
     for (let i = 0; i < 3; i += 1) {
@@ -245,14 +282,22 @@ class GameEngine {
     }
 
     this.moves += 1;
-    ScorpionRules.removeCompletedRuns(this.state);
+    const removedRuns = ScorpionRules.removeCompletedRuns(this.state);
+    const revealed = Math.max(0, beforeHidden - this.countFaceDownTableau());
+
+    this.score += 5;
+    this.score += revealed * 55;
+    this.score += removedRuns * 300;
+
     this.syncGameState();
     return true;
   }
 
   undo() {
     if (this.history.length === 0) return false;
-    this.state = this.history.pop();
+    const snap = this.history.pop();
+    this.state = snap.state;
+    this.score = Math.max(0, snap.score - 12);
     this.moves += 1;
     this.syncGameState();
     return true;
@@ -263,37 +308,7 @@ class GameEngine {
   }
 
   calculateSequentialScore() {
-    let score = this.state.completed * 13;
-
-    for (const column of this.state.columns) {
-      let best = 0;
-      let current = 0;
-
-      for (let i = 0; i < column.length; i += 1) {
-        const card = column[i];
-        if (!card.faceUp) {
-          current = 0;
-          continue;
-        }
-
-        if (i === 0 || !column[i - 1].faceUp) {
-          current = 1;
-        } else {
-          const prev = column[i - 1];
-          if (prev.suit === card.suit && prev.rank === card.rank + 1) {
-            current += 1;
-          } else {
-            current = 1;
-          }
-        }
-
-        if (current > best) best = current;
-      }
-
-      score += best;
-    }
-
-    return Math.min(52, score);
+    return this.score;
   }
 }
 
@@ -312,9 +327,11 @@ class CanvasBoard {
     this.cardW = 120;
     this.cardH = 180;
     this.stackStep = 32;
+    this.baseStackStep = 32;
     this.topMargin = 24;
-    this.colGap = 18;
-    this.leftPad = 20;
+    this.bottomReserved = 90;
+    this.colGap = 12;
+    this.leftPad = 12;
 
     /** @type {{x:number,y:number,w:number,h:number}[]} */
     this.columnRects = [];
@@ -327,6 +344,7 @@ class CanvasBoard {
     this.dragging = null;
     this.pointer = { x: 0, y: 0 };
     this.dropCol = null;
+    this.activePointerId = null;
 
     this.attach();
     this.resize();
@@ -388,13 +406,19 @@ class CanvasBoard {
     this.canvas.addEventListener('pointerdown', (event) => {
       const pos = this.getCanvasPos(event);
       this.pointer = pos;
+      this.activePointerId = event.pointerId;
+      this.canvas.setPointerCapture(event.pointerId);
       if (this.tryStockClick(pos)) return;
       this.startDrag(pos);
       this.draw();
     });
 
-    this.canvas.addEventListener('pointerup', () => {
+    this.canvas.addEventListener('pointerup', (event) => {
       this.finishDrag();
+      if (this.activePointerId !== null) {
+        this.canvas.releasePointerCapture(this.activePointerId);
+        this.activePointerId = null;
+      }
       this.draw();
     });
 
@@ -402,6 +426,10 @@ class CanvasBoard {
       this.hovered = null;
       if (this.dragging) {
         this.finishDrag();
+      }
+      if (this.activePointerId !== null) {
+        this.canvas.releasePointerCapture(this.activePointerId);
+        this.activePointerId = null;
       }
       this.draw();
     });
@@ -417,11 +445,16 @@ class CanvasBoard {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     const totalCols = 8;
+    this.leftPad = Math.max(6, Math.floor(this.width * 0.015));
+    this.colGap = Math.max(4, Math.floor(this.width * 0.012));
+    this.bottomReserved = Math.max(82, Math.floor(this.height * 0.14));
+
     const free = this.width - this.leftPad * 2;
-    const w = Math.min(128, Math.max(84, Math.floor((free - this.colGap * (totalCols - 1)) / totalCols)));
+    const w = Math.min(128, Math.max(36, Math.floor((free - this.colGap * (totalCols - 1)) / totalCols)));
     this.cardW = w;
     this.cardH = w * 1.5;
-    this.stackStep = Math.max(18, Math.floor(this.cardH * 0.2));
+    this.baseStackStep = Math.max(8, Math.floor(this.cardH * 0.2));
+    this.stackStep = this.baseStackStep;
 
     this.computeRects();
     this.draw();
@@ -439,10 +472,19 @@ class CanvasBoard {
         x,
         y: this.topMargin,
         w: this.cardW,
-        h: this.height - this.topMargin - 20,
+        h: this.height - this.topMargin - this.bottomReserved,
       });
       x += this.cardW + this.colGap;
     }
+  }
+
+  getDynamicStackStep() {
+    const maxLen = Math.max(...this.engine.state.columns.map((c) => c.length), 1);
+    if (maxLen <= 1) return this.baseStackStep;
+
+    const available = Math.max(40, this.height - this.topMargin - this.bottomReserved - this.cardH - 6);
+    const fitted = Math.floor(available / (maxLen - 1));
+    return Math.max(6, Math.min(this.baseStackStep, fitted));
   }
 
   /** @param {PointerEvent} event */
@@ -556,8 +598,9 @@ class CanvasBoard {
 
   /** @param {number} col @param {number} index */
   getCardRect(col, index) {
+    const step = this.getDynamicStackStep();
     const base = this.columnRects[col];
-    const y = base.y + index * this.stackStep;
+    const y = base.y + index * step;
     return { x: base.x, y, w: this.cardW, h: this.cardH };
   }
 
@@ -735,11 +778,13 @@ class CanvasBoard {
   drawDraggingStack() {
     if (!this.dragging) return;
 
+    const step = this.getDynamicStackStep();
+
     const startX = this.pointer.x - this.dragging.offsetX;
     const startY = this.pointer.y - this.dragging.offsetY;
 
     this.dragging.stack.forEach((card, idx) => {
-      const y = startY + idx * this.stackStep;
+      const y = startY + idx * step;
       const isTop = idx === this.dragging.stack.length - 1;
       const border = idx === 0 ? 'rgba(223, 75, 75, 0.95)' : null;
       this.drawCard(card, startX, y, isTop, border);
@@ -939,7 +984,7 @@ class App {
 
     if (this.engine.gameState === 'won') {
       this.campaignScore += currentScore;
-      this.winSummary.textContent = `Deck score: ${currentScore} / 52. Total score: ${this.campaignScore}.`;
+      this.winSummary.textContent = `Deck score: ${currentScore} pts. Total score: ${this.campaignScore} pts.`;
       this.winDialog.showModal();
       return;
     }
@@ -955,7 +1000,7 @@ class App {
     this.engine.syncGameState();
 
     const gameScore = this.engine.calculateSequentialScore();
-    this.scoreLabel.textContent = `${gameScore} / 52`;
+    this.scoreLabel.textContent = `${gameScore}`;
     this.movesLabel.textContent = String(this.engine.moves);
 
     const sec = this.engine.elapsedSeconds();

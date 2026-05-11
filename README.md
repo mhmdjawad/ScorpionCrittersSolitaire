@@ -18,6 +18,7 @@ The objective is to build 4 complete same-suit sequences from King (13) down to 
 ## Highlights
 
 - Canvas-based game board for clear and smooth gameplay on desktop and mobile.
+- Portrait-friendly full-screen layout that keeps the whole play field visible.
 - Cute visual style with matte card textures, soft colors, and emoji suit design.
 - Drag-and-drop stack movement with move validation based on Scorpion rules.
 - Hidden card reveal behavior when uncovered.
@@ -25,7 +26,7 @@ The objective is to build 4 complete same-suit sequences from King (13) down to 
 - Unlimited undo support.
 - Reset board to replay the same generated deck.
 - Hint dialog for listing legal moves.
-- Live score system up to 52 per deck.
+- Enhanced action-based scoring (not capped at 52).
 - Win and game-over dialogs.
 - Local high-score saving with player name (via localStorage).
 - Welcome modal explaining rules in a fun and engaging style.
@@ -51,10 +52,23 @@ The objective is to build 4 complete same-suit sequences from King (13) down to 
 
 ## Scoring
 
-- Deck score is based on sequentially placed cards and completed runs.
-- Maximum score per deck is 52.
+- Deck score is action-based and rewards meaningful progress.
+- Points are granted for uncovering hidden cards.
+- Points are granted for creating empty columns (valuable King spaces).
+- Points are granted for completing full suit runs (King to Ace).
+- Small points are granted for legal moves and stock deals.
+- Undo applies a score penalty to prevent easy score inflation.
 - Win keeps your running score for the next deck.
 - On game over, you can save your high score locally.
+
+## Mobile Handling
+
+- Responsive canvas sizing with portrait-first tuning.
+- Dynamic card scaling based on viewport width so all 8 lanes (stock + 7 columns) stay visible.
+- Dynamic vertical stack compression so very long columns still fit in the visible game field.
+- Pointer Events are used for both mouse and touch input.
+- Pointer capture is used during drag to keep stack movement stable on mobile.
+- Safe-area aware spacing is applied for notched devices using viewport-fit and CSS env insets.
 
 ## Tech Stack
 
