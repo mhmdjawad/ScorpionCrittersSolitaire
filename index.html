@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Scorpion Critters Solitaire</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700;800&family=Nunito:wght@500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="index.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-menu">
+        <h1>Scorpion Critters Solitaire</h1>
+        <div class="menu-buttons">
+          <button id="newGameBtn" class="btn warm">New Game</button>
+          <button id="resetBtn" class="btn">Reset Board</button>
+          <button id="undoBtn" class="btn">Undo</button>
+          <button id="hintBtn" class="btn mint">Hint</button>
+        </div>
+      </header>
+
+      <main class="game-wrap">
+        <canvas id="gameCanvas" aria-label="Scorpion canvas board"></canvas>
+        <section class="status-overlay" aria-label="Game Status">
+          <div class="status-item">Time: <strong id="timeLabel">00:00</strong></div>
+          <div class="status-item">Moves: <strong id="movesLabel">0</strong></div>
+          <div class="status-item">Score: <strong id="scoreLabel">0 / 52</strong></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="welcomeDialog" class="welcome-dialog">
+      <h2>Welcome to Scorpion Critters 🦂</h2>
+      <p>
+        Build 4 full suit ladders from King 13 down to Ace 1 using matching critter suits only:
+        🐦 🐸 🐟 🐝
+      </p>
+      <p>
+        Drag a card (and all cards on top) onto a matching card that is exactly one rank higher.
+        Empty columns accept Kings only. Reveal hidden cards and plan ahead.
+      </p>
+      <p>
+        Tap C-1 to deal the extra 3 cards when needed. It is a puzzle challenge: every move counts,
+        and smart sequences grow your score toward 52.
+      </p>
+      <p class="welcome-cta">Can you tame the scorpion table and beat your best score?</p>
+      <form method="dialog">
+        <button class="btn warm">Start Game</button>
+      </form>
+    </dialog>
+
+    <dialog id="hintDialog" class="hint-dialog">
+      <h2>Possible Moves</h2>
+      <pre id="hintList" class="hint-list">No moves found.</pre>
+      <form method="dialog">
+        <button class="btn warm">Close</button>
+      </form>
+    </dialog>
+
+    <dialog id="winDialog" class="hint-dialog">
+      <h2>You Won 🎉</h2>
+      <p id="winSummary">Great play.</p>
+      <form method="dialog" class="dialog-actions">
+        <button id="playNewDeckBtn" class="btn mint" value="play">Play New Deck</button>
+        <button class="btn" value="close">Close</button>
+      </form>
+    </dialog>
+
+    <dialog id="gameOverDialog" class="hint-dialog">
+      <h2>Game Over</h2>
+      <p id="gameOverSummary">Save your high score.</p>
+      <label class="score-name">
+        Name
+        <input id="playerNameInput" type="text" maxlength="20" placeholder="Brave Player" />
+      </label>
+      <div class="dialog-actions">
+        <button id="saveScoreBtn" class="btn warm">Save High Score</button>
+        <button id="newAfterGameOverBtn" class="btn mint">New Deck</button>
+      </div>
+      <h3>Local High Scores</h3>
+      <ol id="highScoreList" class="high-score-list"></ol>
+    </dialog>
+
+    <script src="index.js"></script>
+  </body>
+</html>
