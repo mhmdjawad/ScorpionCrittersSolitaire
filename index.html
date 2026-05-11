@@ -38,7 +38,7 @@
       <h2>Welcome to Scorpion Critters 🦂</h2>
       <p>
         Build 4 full suit ladders from King 13 down to Ace 1 using matching critter suits only:
-        🐦 🐸 🐟 🐝
+        🐞 🐸 🐟 🐝
       </p>
       <p>
         Drag a card (and all cards on top) onto a matching card that is exactly one rank higher.
@@ -85,6 +85,14 @@
       <div class="dialog-actions">
         <button id="saveScoreBtn" class="btn warm">Save High Score</button>
         <button id="newAfterGameOverBtn" class="btn mint">New Deck</button>
+      </div>
+      <label class="score-name">
+        Deck Seed
+        <input id="seedInput" type="text" inputmode="numeric" placeholder="Paste seed to replay deck" />
+      </label>
+      <div class="dialog-actions">
+        <button id="playSeedBtn" class="btn">Play Seed</button>
+        <button id="clearScoresBtn" class="btn">Clear Personal Scores</button>
       </div>
       <h3>Local High Scores</h3>
       <ol id="highScoreList" class="high-score-list"></ol>

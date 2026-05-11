@@ -209,6 +209,26 @@ body {
   margin: 4px 0;
 }
 
+.score-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 8px;
+}
+
+.seed-btn {
+  border: 0;
+  border-radius: 8px;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1f4f58;
+  background: #d9f2ea;
+  cursor: pointer;
+}
+
 .hint-list {
   max-height: 44vh;
   overflow: auto;

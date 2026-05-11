@@ -8,7 +8,7 @@ Live demo: https://pdemia.com/scs/
 
 Scorpion Critters Solitaire keeps classic Scorpion core rules and replaces standard suits with fun critter suits:
 
-- Red Bird: R 🐦
+- Red Ladybug: R 🐞
 - Green Frog: G 🐸
 - Blue Fish: B 🐟
 - Yellow Bee: Y 🐝

@@ -10,6 +10,8 @@
  * @typedef {{ fromCol: number; fromIndex: number; toCol: number; card: CardLike; kind: 'move'|'deal' }} MoveInfo
  */
 
+const SAVE_KEY = 'scorpionProgressV1';
+
 class Card {
   /** @param {string} id @param {SuitCode} suit @param {number} rank @param {boolean} faceUp */
   constructor(id, suit, rank, faceUp = true) {
@@ -64,15 +66,15 @@ class BoardState {
 
 class ScorpionRules {
   static SUITS = {
-    R: { emoji: '🐦', base: '#f3a2a2', accent: '#cf4f4f' },
-    G: { emoji: '🐸', base: '#a8e2b4', accent: '#48a45d' },
-    B: { emoji: '🐟', base: '#a8d4f7', accent: '#3d7fcb' },
-    Y: { emoji: '🐝', base: '#f8e5a3', accent: '#c19b26' },
+    R: { emoji: '🐞', base: '#e57b7b', accent: '#b93b3b' },
+    G: { emoji: '🐸', base: '#78c88b', accent: '#2f8548' },
+    B: { emoji: '🐟', base: '#6ab0e2', accent: '#2f6eb2' },
+    Y: { emoji: '🐝', base: '#e5cb6c', accent: '#9f7e1d' },
   };
 
   /** @param {Card} card */
   static cardText(card) {
-    return `${this.SUITS[card.suit].emoji}${card.rank}`;
+    return `${card.rank}${this.SUITS[card.suit].emoji}`;
   }
 
   /** @param {Card[][]} columns @param {number} fromCol @param {number} fromIndex @param {number} toCol */
@@ -85,7 +87,11 @@ class ScorpionRules {
     const card = source[fromIndex];
     if (!card.faceUp) return false;
 
-    if (target.length === 0) return card.rank === 13;
+    if (target.length === 0) {
+      // Prevent no-op column swaps: a root King stack moved to an empty column is equivalent state.
+      if (card.rank === 13 && fromIndex === 0) return false;
+      return card.rank === 13;
+    }
 
     const top = target[target.length - 1];
     return top.faceUp && top.suit === card.suit && top.rank === card.rank + 1;
@@ -148,6 +154,7 @@ class GameEngine {
     this.history = [];
     this.moves = 0;
     this.score = 0;
+    this.currentSeed = Date.now();
     this.startedAt = Date.now();
     this.gameState = 'playing';
   }
@@ -211,8 +218,10 @@ class GameEngine {
     this.gameState = hasMoves || canDeal ? 'playing' : 'stuck';
   }
 
-  startSingle() {
-    this.state = this.createClassicState(Date.now());
+  startSingle(seed = Date.now()) {
+    const numericSeed = Number(seed);
+    this.currentSeed = Number.isFinite(numericSeed) ? numericSeed : Date.now();
+    this.state = this.createClassicState(this.currentSeed);
     this.initialState = this.state.clone();
     this.history = [];
     this.moves = 0;
@@ -328,6 +337,8 @@ class CanvasBoard {
     this.cardH = 180;
     this.stackStep = 32;
     this.baseStackStep = 32;
+    this.stockW = 56;
+    this.isPortraitMobile = false;
     this.topMargin = 24;
     this.bottomReserved = 90;
     this.colGap = 12;
@@ -445,15 +456,22 @@ class CanvasBoard {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
 
     const totalCols = 8;
+    this.isPortraitMobile = this.height > this.width && this.width <= 760;
+
     this.leftPad = Math.max(6, Math.floor(this.width * 0.015));
     this.colGap = Math.max(4, Math.floor(this.width * 0.012));
-    this.bottomReserved = Math.max(82, Math.floor(this.height * 0.14));
+    this.bottomReserved = Math.max(this.isPortraitMobile ? 92 : 82, Math.floor(this.height * 0.14));
+    this.topMargin = this.isPortraitMobile ? 14 : 24;
 
     const free = this.width - this.leftPad * 2;
-    const w = Math.min(128, Math.max(36, Math.floor((free - this.colGap * (totalCols - 1)) / totalCols)));
+    this.stockW = Math.max(28, Math.floor(free * (this.isPortraitMobile ? 0.075 : 0.09)));
+    const w = Math.min(
+      128,
+      Math.max(36, Math.floor((free - this.stockW - this.colGap * (totalCols - 1)) / 7)),
+    );
     this.cardW = w;
-    this.cardH = w * 1.5;
-    this.baseStackStep = Math.max(8, Math.floor(this.cardH * 0.2));
+    this.cardH = w * (this.isPortraitMobile ? 1.42 : 1.5);
+    this.baseStackStep = Math.max(this.isPortraitMobile ? 16 : 8, Math.floor(this.cardH * 0.2));
     this.stackStep = this.baseStackStep;
 
     this.computeRects();
@@ -464,8 +482,8 @@ class CanvasBoard {
     this.columnRects = [];
     let x = this.leftPad;
 
-    this.stockRect = { x, y: this.topMargin, w: this.cardW, h: this.cardH };
-    x += this.cardW + this.colGap;
+    this.stockRect = { x, y: this.topMargin, w: this.stockW, h: this.cardH };
+    x += this.stockW + this.colGap;
 
     for (let i = 0; i < 7; i += 1) {
       this.columnRects.push({
@@ -484,7 +502,8 @@ class CanvasBoard {
 
     const available = Math.max(40, this.height - this.topMargin - this.bottomReserved - this.cardH - 6);
     const fitted = Math.floor(available / (maxLen - 1));
-    return Math.max(6, Math.min(this.baseStackStep, fitted));
+    const minStep = this.isPortraitMobile ? 16 : 8;
+    return Math.max(minStep, Math.min(this.baseStackStep, fitted));
   }
 
   /** @param {PointerEvent} event */
@@ -641,7 +660,7 @@ class CanvasBoard {
         y + this.cardH * 0.9,
         this.cardH,
       );
-      bg.addColorStop(0, '#ffffff');
+      bg.addColorStop(0, '#fff7ef');
       bg.addColorStop(1, suitStyle.base);
       this.ctx.fillStyle = bg;
       this.ctx.fillRect(x, y, this.cardW, this.cardH);
@@ -649,13 +668,14 @@ class CanvasBoard {
       this.ctx.fillStyle = this.cardPattern;
       this.ctx.fillRect(x, y, this.cardW, this.cardH);
 
-      this.ctx.font = `${Math.max(16, Math.floor(this.cardW * 0.19))}px "Baloo 2"`;
+      const fontSize = Math.max(this.isPortraitMobile ? 10 : 12, Math.floor(this.cardW * 0.24));
+      this.ctx.font = `${fontSize}px "Baloo 2"`;
       this.ctx.fillStyle = '#000000';
       this.ctx.shadowColor = 'rgba(255,255,255,0.92)';
       this.ctx.shadowBlur = 6;
       this.ctx.textAlign = 'left';
       this.ctx.textBaseline = 'top';
-      this.ctx.fillText(ScorpionRules.cardText(card), x + 10, y + 8);
+      this.ctx.fillText(ScorpionRules.cardText(card), x + 6, y + 6);
       this.ctx.shadowBlur = 0;
 
       if (isTop) {
@@ -675,6 +695,15 @@ class CanvasBoard {
   drawEmojiBody(card, x, y) {
     const emoji = ScorpionRules.SUITS[card.suit].emoji;
     const count = card.rank;
+
+    if (this.isPortraitMobile) {
+      const size = Math.max(18, Math.floor(this.cardW * 0.56));
+      this.ctx.font = `${size}px "Segoe UI Emoji", "Apple Color Emoji", sans-serif`;
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(emoji, x + this.cardW / 2, y + this.cardH * 0.58);
+      return;
+    }
 
     const rows = Math.ceil(Math.sqrt(count));
     const cols = Math.ceil(count / rows);
@@ -829,8 +858,15 @@ class CanvasBoard {
 
 class App {
   constructor() {
+    this.campaignScore = 0;
+    this.lastScoreAtEnd = 0;
+    this.notifiedState = 'playing';
+
     this.engine = new GameEngine();
-    this.engine.startSingle();
+    const resumed = this.restoreProgress();
+    if (!resumed) {
+      this.engine.startSingle();
+    }
 
     this.canvas = document.getElementById('gameCanvas');
     this.board = new CanvasBoard(this.canvas, this.engine, () => this.renderAll());
@@ -848,16 +884,26 @@ class App {
     this.gameOverDialog = document.getElementById('gameOverDialog');
     this.gameOverSummary = document.getElementById('gameOverSummary');
     this.playerNameInput = document.getElementById('playerNameInput');
+    this.seedInput = document.getElementById('seedInput');
     this.highScoreList = document.getElementById('highScoreList');
+    this.saveScoreBtn = document.getElementById('saveScoreBtn');
+    this.playSeedBtn = document.getElementById('playSeedBtn');
+    this.clearScoresBtn = document.getElementById('clearScoresBtn');
 
-    this.campaignScore = 0;
-    this.lastScoreAtEnd = 0;
-    this.notifiedState = 'playing';
+    this.hasSavedCurrentGame = false;
 
     this.bindButtons();
+    this.registerServiceWorker();
     this.showWelcome();
     this.renderHighScores();
-    this.renderStatus();
+    this.renderAll();
+
+    window.addEventListener('beforeunload', () => this.persistProgress());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        this.persistProgress();
+      }
+    });
 
     this.timer = setInterval(() => {
       this.renderStatus();
@@ -870,12 +916,14 @@ class App {
       this.engine.startSingle();
       this.campaignScore = 0;
       this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
       this.renderAll();
     });
 
     document.getElementById('resetBtn').addEventListener('click', () => {
       this.engine.resetBoard();
       this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
       this.renderAll();
     });
 
@@ -905,26 +953,171 @@ class App {
     document.getElementById('playNewDeckBtn').addEventListener('click', () => {
       this.engine.startSingle();
       this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
       this.renderAll();
     });
 
-    document.getElementById('saveScoreBtn').addEventListener('click', () => {
-      this.saveHighScore();
-      this.renderHighScores();
+    this.saveScoreBtn.addEventListener('click', () => {
+      const saved = this.saveHighScore();
+      if (saved) {
+        this.hasSavedCurrentGame = true;
+        this.saveScoreBtn.disabled = true;
+        this.renderHighScores();
+      }
     });
 
     document.getElementById('newAfterGameOverBtn').addEventListener('click', () => {
       this.campaignScore = 0;
       this.engine.startSingle();
       this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
       this.gameOverDialog.close();
       this.renderAll();
     });
+
+    this.playSeedBtn.addEventListener('click', () => {
+      const seed = Number(this.seedInput.value.trim());
+      if (!Number.isFinite(seed)) return;
+
+      this.engine.startSingle(seed);
+      this.campaignScore = 0;
+      this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
+      this.gameOverDialog.close();
+      this.renderAll();
+    });
+
+    this.clearScoresBtn.addEventListener('click', () => {
+      localStorage.removeItem('scorpionHighScores');
+      this.renderHighScores();
+    });
+
+    this.highScoreList.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest('[data-seed]');
+      if (!(button instanceof HTMLElement)) return;
+
+      const seed = Number(button.dataset.seed);
+      if (!Number.isFinite(seed)) return;
+
+      this.engine.startSingle(seed);
+      this.campaignScore = 0;
+      this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
+      this.gameOverDialog.close();
+      this.renderAll();
+    });
+
   }
 
   showWelcome() {
     if (this.welcomeDialog) {
       this.welcomeDialog.showModal();
+    }
+  }
+
+  registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('./sw.js').catch(() => {
+      // Ignore SW registration failures.
+    });
+  }
+
+  cardToRaw(card) {
+    return {
+      id: card.id,
+      suit: card.suit,
+      rank: card.rank,
+      faceUp: card.faceUp,
+    };
+  }
+
+  stateToRaw(state) {
+    return {
+      columns: state.columns.map((col) => col.map((card) => this.cardToRaw(card))),
+      stock: state.stock.map((card) => this.cardToRaw(card)),
+      completed: state.completed,
+    };
+  }
+
+  rawToState(rawState) {
+    const state = new BoardState();
+    state.columns = rawState.columns.map((col) =>
+      col.map((card) => new Card(card.id, card.suit, Number(card.rank), Boolean(card.faceUp))),
+    );
+    while (state.columns.length < 7) state.columns.push([]);
+    state.columns = state.columns.slice(0, 7);
+    state.stock = rawState.stock.map(
+      (card) => new Card(card.id, card.suit, Number(card.rank), Boolean(card.faceUp)),
+    );
+    state.completed = Number(rawState.completed || 0);
+    return state;
+  }
+
+  buildProgressSnapshot() {
+    return {
+      version: 1,
+      state: this.stateToRaw(this.engine.state),
+      initialState: this.stateToRaw(this.engine.initialState),
+      history: this.engine.history.map((entry) => ({
+        state: this.stateToRaw(entry.state),
+        score: entry.score,
+      })),
+      moves: this.engine.moves,
+      score: this.engine.score,
+      currentSeed: this.engine.currentSeed,
+      gameState: this.engine.gameState,
+      elapsedSeconds: this.engine.elapsedSeconds(),
+      campaignScore: this.campaignScore,
+      lastScoreAtEnd: this.lastScoreAtEnd,
+      notifiedState: this.notifiedState,
+      hasSavedCurrentGame: this.hasSavedCurrentGame,
+    };
+  }
+
+  persistProgress() {
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify(this.buildProgressSnapshot()));
+    } catch {
+      // Ignore persistence errors.
+    }
+  }
+
+  restoreProgress() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || parsed.version !== 1 || !parsed.state || !parsed.initialState) {
+        return false;
+      }
+
+      this.engine.state = this.rawToState(parsed.state);
+      this.engine.initialState = this.rawToState(parsed.initialState);
+      this.engine.history = Array.isArray(parsed.history)
+        ? parsed.history.map((entry) => ({
+            state: this.rawToState(entry.state),
+            score: Number(entry.score || 0),
+          }))
+        : [];
+
+      this.engine.moves = Number(parsed.moves || 0);
+      this.engine.score = Number(parsed.score || 0);
+      this.engine.currentSeed = Number(parsed.currentSeed || Date.now());
+      this.engine.gameState = parsed.gameState || 'playing';
+
+      const elapsed = Number(parsed.elapsedSeconds || 0);
+      this.engine.startedAt = Date.now() - Math.max(0, elapsed) * 1000;
+
+      this.campaignScore = Number(parsed.campaignScore || 0);
+      this.lastScoreAtEnd = Number(parsed.lastScoreAtEnd || 0);
+      this.notifiedState = parsed.notifiedState || 'playing';
+      this.hasSavedCurrentGame = Boolean(parsed.hasSavedCurrentGame);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -952,12 +1145,32 @@ class App {
 
     scores.slice(0, 12).forEach((entry) => {
       const item = document.createElement('li');
-      item.textContent = `${entry.name} - ${entry.score} pts (${entry.time})`;
+
+      const row = document.createElement('div');
+      row.className = 'score-row';
+
+      const text = document.createElement('span');
+      const seedText = entry.seed !== undefined ? entry.seed : 'n/a';
+      text.textContent = `${entry.name} - ${entry.score} pts (${entry.time}) seed:${seedText}`;
+
+      const replay = document.createElement('button');
+      replay.type = 'button';
+      replay.className = 'seed-btn';
+      replay.dataset.seed = String(seedText);
+      replay.textContent = 'Play Seed';
+
+      row.appendChild(text);
+      row.appendChild(replay);
+      item.appendChild(row);
       this.highScoreList.appendChild(item);
     });
   }
 
   saveHighScore() {
+    if (this.hasSavedCurrentGame) {
+      return false;
+    }
+
     const name = this.playerNameInput.value.trim() || 'Brave Player';
     const sec = this.engine.elapsedSeconds();
     const mm = String(Math.floor(sec / 60)).padStart(2, '0');
@@ -969,11 +1182,13 @@ class App {
       name,
       score: this.lastScoreAtEnd,
       time,
+      seed: this.engine.currentSeed,
       at: new Date().toISOString(),
     });
 
     scores.sort((a, b) => b.score - a.score);
     localStorage.setItem('scorpionHighScores', JSON.stringify(scores.slice(0, 50)));
+    return true;
   }
 
   maybeOpenEndDialogs(currentScore) {
@@ -991,6 +1206,8 @@ class App {
 
     if (this.engine.gameState === 'stuck') {
       this.gameOverSummary.textContent = `Final score: ${this.lastScoreAtEnd}. Save your high score!`;
+      this.seedInput.value = String(this.engine.currentSeed);
+      this.saveScoreBtn.disabled = this.hasSavedCurrentGame;
       this.renderHighScores();
       this.gameOverDialog.showModal();
     }
@@ -1014,6 +1231,7 @@ class App {
   renderAll() {
     this.renderStatus();
     this.board.draw();
+    this.persistProgress();
   }
 }
 
