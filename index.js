@@ -18,6 +18,10 @@ const CURATED_LEVELS = [
   { seed: 1778580850582, time: '5:00', moves: 31 },
 ];
 
+// Seeds confirmed impossible — add manually after observing console dead-end logs.
+// Auto-play will never pick these seeds for new games.
+const BLACKLISTED_SEEDS = [1778588636627,1778917675031];
+
 class Card {
   /** @param {string} id @param {SuitCode} suit @param {number} rank @param {boolean} faceUp */
   constructor(id, suit, rank, faceUp = true) {
@@ -967,6 +971,7 @@ class App {
     this.zenLogToggleBtn = document.getElementById('zenLogToggleBtn');
     this.zenLogClearBtn = document.getElementById('zenLogClearBtn');
     this.zenCloseBtn = document.getElementById('zenCloseBtn');
+    this.zenAutoNewGameChk = document.getElementById('zenAutoNewGameChk');
     this.zenDragHandle = document.getElementById('zenDragHandle');
     this.zenOutput = document.getElementById('zenOutput');
     this.zenLog = document.getElementById('zenLog');
@@ -1017,6 +1022,10 @@ class App {
 
   bindButtons() {
     document.getElementById('newGameBtn').addEventListener('click', () => {
+      if (this.zen.unlocked) {
+        this.zen.logs = [];
+        this.zenLog.textContent = 'Zen log';
+      }
       this.startFreshGame();
     });
 
@@ -1358,10 +1367,12 @@ class App {
   }
 
   logZen(message) {
-    const stamp = new Date().toLocaleTimeString();
-    this.zen.logs.push(`[${stamp}] ${message}`);
+    const stamp = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    const moveNum = this.engine.moves ?? 0;
+    this.zen.logs.push(`${stamp} #${String(moveNum).padStart(3, '0')} ${message}`);
     this.zen.logs = this.zen.logs.slice(-140);
     this.zenLog.textContent = this.zen.logs.join('\n');
+    this.zenLog.scrollTop = this.zenLog.scrollHeight;
   }
 
   stateSignature(state) {
@@ -1453,7 +1464,7 @@ class App {
       const candidates = this.getAutoCandidates();
       const viable = candidates.filter((c) => !c.dead);
 
-      this.logZen(`Undo backtrack used. Remaining undo budget: ${this.zen.undoBudget}`);
+      this.logZen(`undo used, budget ${this.zen.undoBudget}`);
 
       if (viable.length >= this.zen.minBranchOptions) {
         return true;
@@ -1584,6 +1595,20 @@ class App {
       this.renderAll();
       if (recovered) return true;
       this.logZen('Dead end reached in every explored scenario.');
+      console.log(`[Zen dead end] seed:${this.engine.currentSeed} moves:${this.engine.moves} time:${this.engine.elapsedSeconds()}s`);
+      if (this.zenAutoNewGameChk?.checked) {
+        this.logZen('Auto new game …');
+        this.zen.logs = [];
+        this.zenLog.textContent = 'Zen log';
+        let newSeed;
+        do { newSeed = Date.now() + Math.floor(Math.random() * 1e9); }
+        while (BLACKLISTED_SEEDS.includes(newSeed));
+        this.startFreshGame(newSeed);
+        this.zen.running = true;
+        this.syncZenButtons();
+        this.logZen('Auto pilot continued on new game.');
+        return true;
+      }
       return false;
     }
 

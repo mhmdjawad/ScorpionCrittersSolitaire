@@ -147,6 +147,18 @@ body {
   font-family: "Baloo 2", sans-serif;
 }
 
+.zen-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #1f4d56;
+  cursor: pointer;
+}
+
 .zen-drag-handle {
   cursor: move;
   user-select: none;
@@ -277,6 +289,11 @@ body {
   padding: 10px;
   background: #edf9f4;
   white-space: pre-wrap;
+}
+
+#zenLog {
+  max-height: 7.5em;
+  overflow-y: auto;
 }
 
 .levels-dialog {
