@@ -15,9 +15,10 @@
   <body>
     <div class="app-shell">
       <header class="top-menu">
-        <h1>Scorpion Critters Solitaire</h1>
+        <h1><button id="logoTrigger" class="logo-trigger" aria-label="Secret Zen Mode">🦂</button> Scorpion Critters Solitaire</h1>
         <div class="menu-buttons">
           <button id="newGameBtn" class="btn warm">New Game</button>
+          <button id="levelsBtn" class="btn mint">Levels</button>
           <button id="resetBtn" class="btn">Reset Board</button>
           <button id="undoBtn" class="btn">Undo</button>
           <button id="hintBtn" class="btn mint">Hint</button>
@@ -32,6 +33,22 @@
           <div class="status-item">Score: <strong id="scoreLabel">0</strong></div>
         </section>
       </main>
+
+      <aside id="zenPanel" class="zen-panel" hidden>
+        <h3 id="zenDragHandle" class="zen-drag-handle">Auto Pilot Zen</h3>
+        <div class="dialog-actions">
+          <button id="zenAutoBtn" class="btn mint">Auto Play</button>
+          <button id="zenPauseBtn" class="btn">Pause</button>
+          <button id="zenStepBtn" class="btn">Play Single</button>
+          <button id="zenInitialBtn" class="btn">Initial Deck + Seed</button>
+          <button id="zenStateBtn" class="btn">Current State</button>
+          <button id="zenLogToggleBtn" class="btn">Hide Log</button>
+          <button id="zenLogClearBtn" class="btn">Clear Log</button>
+          <button id="zenCloseBtn" class="btn">Hide</button>
+        </div>
+        <textarea id="zenOutput" rows="5" placeholder="Zen output"></textarea>
+        <pre id="zenLog" class="hint-list">Zen log</pre>
+      </aside>
     </div>
 
     <dialog id="welcomeDialog" class="welcome-dialog">
@@ -52,10 +69,21 @@
         Scoring rewards real progress: uncovering hidden cards, building long clean suit chains,
         completing full runs, and creating free spaces. Smart play earns much more than quick moves.
       </p>
-      <p class="welcome-cta">Can you tame the scorpion table and beat your best score?</p>
-      <form method="dialog">
-        <button class="btn warm">Start Game</button>
-      </form>
+      <p>
+        Open <strong>Levels</strong> to play curated solvable decks. Everyone can take on the same level,
+        compare scores and times, and challenge each other to find the cleanest win.
+      </p>
+      <p>
+        Want something fresh? The <strong>∞</strong> level gives you a brand new random deck every time,
+        so you can practice freely between shared level challenges.
+      </p>
+      <p class="welcome-cta">Pick a level to compete, or dive into infinity and chase a new personal best.</p>
+      <div class="dialog-actions">
+        <button id="welcomeLevelsBtn" type="button" class="btn mint">Play Levels</button>
+        <form method="dialog">
+          <button class="btn warm">Start Game</button>
+        </form>
+      </div>
     </dialog>
 
     <dialog id="hintDialog" class="hint-dialog">
@@ -66,9 +94,21 @@
       </form>
     </dialog>
 
+    <dialog id="levelsDialog" class="hint-dialog levels-dialog">
+      <h2>Levels</h2>
+      <div id="levelsList" class="levels-list"></div>
+      <form method="dialog" class="dialog-actions">
+        <button class="btn warm">Close</button>
+      </form>
+    </dialog>
+
     <dialog id="winDialog" class="hint-dialog">
       <h2>You Won 🎉</h2>
       <p id="winSummary">Great play.</p>
+      <p id="winAnalysis">Analysis pending.</p>
+      <div class="dialog-actions">
+        <button id="downloadDeckBtn" class="btn">Download Solvable Deck</button>
+      </div>
       <form method="dialog" class="dialog-actions">
         <button id="playNewDeckBtn" class="btn mint" value="play">Play New Deck</button>
         <button class="btn" value="close">Close</button>

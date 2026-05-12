@@ -11,6 +11,12 @@
  */
 
 const SAVE_KEY = 'scorpionProgressV1';
+const LEVEL_RECORDS_KEY = 'scorpionLevelRecordsV1';
+
+// Add newly verified levels here. Each one defines the seed plus the global target to beat.
+const CURATED_LEVELS = [
+  { seed: 1778580850582, time: '5:00', moves: 31 },
+];
 
 class Card {
   /** @param {string} id @param {SuitCode} suit @param {number} rank @param {boolean} faceUp */
@@ -356,6 +362,8 @@ class CanvasBoard {
     this.pointer = { x: 0, y: 0 };
     this.dropCol = null;
     this.activePointerId = null;
+    this.autoLocked = false;
+    this.autoAnim = null;
 
     this.attach();
     this.resize();
@@ -408,6 +416,7 @@ class CanvasBoard {
     window.addEventListener('resize', () => this.resize());
 
     this.canvas.addEventListener('pointermove', (event) => {
+      if (this.autoLocked) return;
       this.pointer = this.getCanvasPos(event);
       this.updateHover();
       if (this.dragging) this.updateDropTarget();
@@ -415,6 +424,7 @@ class CanvasBoard {
     });
 
     this.canvas.addEventListener('pointerdown', (event) => {
+      if (this.autoLocked) return;
       const pos = this.getCanvasPos(event);
       this.pointer = pos;
       this.activePointerId = event.pointerId;
@@ -425,6 +435,7 @@ class CanvasBoard {
     });
 
     this.canvas.addEventListener('pointerup', (event) => {
+      if (this.autoLocked) return;
       this.finishDrag();
       if (this.activePointerId !== null) {
         this.canvas.releasePointerCapture(this.activePointerId);
@@ -434,6 +445,7 @@ class CanvasBoard {
     });
 
     this.canvas.addEventListener('pointerleave', () => {
+      if (this.autoLocked) return;
       this.hovered = null;
       if (this.dragging) {
         this.finishDrag();
@@ -820,6 +832,54 @@ class CanvasBoard {
     });
   }
 
+  drawAutoAnimation() {
+    if (!this.autoAnim) return;
+    const step = this.getDynamicStackStep();
+    this.autoAnim.stack.forEach((card, idx) => {
+      const y = this.autoAnim.y + idx * step;
+      const isTop = idx === this.autoAnim.stack.length - 1;
+      this.drawCard(card, this.autoAnim.x, y, isTop, 'rgba(70, 120, 240, 0.9)');
+    });
+  }
+
+  animateAutoMove(fromCol, fromIndex, toCol, done) {
+    const source = this.engine.state.columns[fromCol];
+    if (!source || fromIndex < 0 || fromIndex >= source.length) {
+      done();
+      return;
+    }
+
+    const stack = source.slice(fromIndex).map((card) => card.clone());
+    const start = this.getCardRect(fromCol, fromIndex);
+    const targetY = this.engine.state.columns[toCol].length;
+    const end = this.getCardRect(toCol, targetY);
+    const duration = 260;
+    const t0 = performance.now();
+    this.autoLocked = true;
+
+    const frame = (now) => {
+      const t = Math.min(1, (now - t0) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      this.autoAnim = {
+        x: start.x + (end.x - start.x) * eased,
+        y: start.y + (end.y - start.y) * eased,
+        stack,
+      };
+      this.draw();
+
+      if (t < 1) {
+        requestAnimationFrame(frame);
+        return;
+      }
+
+      this.autoAnim = null;
+      this.autoLocked = false;
+      done();
+    };
+
+    requestAnimationFrame(frame);
+  }
+
   drawStateBadge() {
     if (this.engine.gameState === 'playing') return;
 
@@ -852,6 +912,7 @@ class CanvasBoard {
     this.drawStockArea();
     this.drawColumns();
     this.drawDraggingStack();
+    this.drawAutoAnimation();
     this.drawStateBadge();
   }
 }
@@ -877,8 +938,12 @@ class App {
 
     this.hintDialog = document.getElementById('hintDialog');
     this.hintList = document.getElementById('hintList');
+    this.levelsBtn = document.getElementById('levelsBtn');
+    this.levelsDialog = document.getElementById('levelsDialog');
+    this.levelsList = document.getElementById('levelsList');
 
     this.welcomeDialog = document.getElementById('welcomeDialog');
+    this.welcomeLevelsBtn = document.getElementById('welcomeLevelsBtn');
     this.winDialog = document.getElementById('winDialog');
     this.winSummary = document.getElementById('winSummary');
     this.gameOverDialog = document.getElementById('gameOverDialog');
@@ -889,12 +954,51 @@ class App {
     this.saveScoreBtn = document.getElementById('saveScoreBtn');
     this.playSeedBtn = document.getElementById('playSeedBtn');
     this.clearScoresBtn = document.getElementById('clearScoresBtn');
+    this.winAnalysis = document.getElementById('winAnalysis');
+    this.downloadDeckBtn = document.getElementById('downloadDeckBtn');
+
+    this.logoTrigger = document.getElementById('logoTrigger');
+    this.zenPanel = document.getElementById('zenPanel');
+    this.zenAutoBtn = document.getElementById('zenAutoBtn');
+    this.zenPauseBtn = document.getElementById('zenPauseBtn');
+    this.zenStepBtn = document.getElementById('zenStepBtn');
+    this.zenInitialBtn = document.getElementById('zenInitialBtn');
+    this.zenStateBtn = document.getElementById('zenStateBtn');
+    this.zenLogToggleBtn = document.getElementById('zenLogToggleBtn');
+    this.zenLogClearBtn = document.getElementById('zenLogClearBtn');
+    this.zenCloseBtn = document.getElementById('zenCloseBtn');
+    this.zenDragHandle = document.getElementById('zenDragHandle');
+    this.zenOutput = document.getElementById('zenOutput');
+    this.zenLog = document.getElementById('zenLog');
 
     this.hasSavedCurrentGame = false;
+    this.logoClicks = 0;
+    this.lastLogoClickAt = 0;
+
+    this.zen = {
+      unlocked: false,
+      running: false,
+      timer: null,
+      undoBudget: 50,
+      forbiddenMoves: new Map(),
+      exhaustedStates: new Set(),
+      minBranchOptions: 3,
+      pathDecisions: [],
+      logs: [],
+      lastWinByAuto: false,
+    };
+
+    this.zenLogHidden = false;
+    this.zenDrag = {
+      active: false,
+      dx: 0,
+      dy: 0,
+    };
 
     this.bindButtons();
     this.registerServiceWorker();
     this.showWelcome();
+    this.renderLevels();
     this.renderHighScores();
     this.renderAll();
 
@@ -913,22 +1017,36 @@ class App {
 
   bindButtons() {
     document.getElementById('newGameBtn').addEventListener('click', () => {
-      this.engine.startSingle();
-      this.campaignScore = 0;
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.renderAll();
+      this.startFreshGame();
+    });
+
+    this.levelsBtn.addEventListener('click', () => {
+      this.openLevelsDialog();
+    });
+
+    this.welcomeLevelsBtn?.addEventListener('click', () => {
+      if (this.welcomeDialog?.open) {
+        this.welcomeDialog.close();
+      }
+      this.openLevelsDialog();
     });
 
     document.getElementById('resetBtn').addEventListener('click', () => {
+      this.stopZenAuto();
       this.engine.resetBoard();
       this.notifiedState = 'playing';
       this.hasSavedCurrentGame = false;
+      this.zen.undoBudget = 50;
+      this.zen.forbiddenMoves.clear();
+      this.zen.exhaustedStates.clear();
+      this.zen.pathDecisions = [];
+      this.zen.lastWinByAuto = false;
       this.renderAll();
     });
 
     document.getElementById('undoBtn').addEventListener('click', () => {
       this.engine.undo();
+      this.zen.pathDecisions = [];
       this.notifiedState = 'playing';
       this.renderAll();
     });
@@ -951,10 +1069,7 @@ class App {
     });
 
     document.getElementById('playNewDeckBtn').addEventListener('click', () => {
-      this.engine.startSingle();
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.renderAll();
+      this.startFreshGame();
     });
 
     this.saveScoreBtn.addEventListener('click', () => {
@@ -967,24 +1082,14 @@ class App {
     });
 
     document.getElementById('newAfterGameOverBtn').addEventListener('click', () => {
-      this.campaignScore = 0;
-      this.engine.startSingle();
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.gameOverDialog.close();
-      this.renderAll();
+      this.startFreshGame(null, this.gameOverDialog);
     });
 
     this.playSeedBtn.addEventListener('click', () => {
       const seed = Number(this.seedInput.value.trim());
       if (!Number.isFinite(seed)) return;
 
-      this.engine.startSingle(seed);
-      this.campaignScore = 0;
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.gameOverDialog.close();
-      this.renderAll();
+      this.startFreshGame(seed, this.gameOverDialog);
     });
 
     this.clearScoresBtn.addEventListener('click', () => {
@@ -1001,19 +1106,560 @@ class App {
       const seed = Number(button.dataset.seed);
       if (!Number.isFinite(seed)) return;
 
-      this.engine.startSingle(seed);
-      this.campaignScore = 0;
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.gameOverDialog.close();
-      this.renderAll();
+      this.startFreshGame(seed, this.gameOverDialog);
     });
 
+    this.levelsList.addEventListener('click', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const button = target.closest('[data-level-seed], [data-level-mode]');
+      if (!(button instanceof HTMLElement)) return;
+
+      if (button.dataset.levelMode === 'infinity') {
+        this.startFreshGame(null, this.levelsDialog);
+        return;
+      }
+
+      const seed = Number(button.dataset.levelSeed);
+      if (!Number.isFinite(seed)) return;
+
+      this.startFreshGame(seed, this.levelsDialog);
+    });
+
+    this.logoTrigger.addEventListener('click', () => {
+      const now = Date.now();
+      if (now - this.lastLogoClickAt > 1300) {
+        this.logoClicks = 0;
+      }
+      this.lastLogoClickAt = now;
+      this.logoClicks += 1;
+      if (this.logoClicks >= 5) {
+        this.toggleZenPanel();
+        this.logoClicks = 0;
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === '`') {
+        this.toggleZenPanel();
+      }
+    });
+
+    this.zenAutoBtn.addEventListener('click', () => {
+      if (this.zen.running) {
+        this.stopZenAuto();
+      } else {
+        this.startZenAuto();
+      }
+    });
+
+    this.zenPauseBtn.addEventListener('click', () => {
+      if (this.zen.running) {
+        this.stopZenAuto();
+      } else {
+        this.startZenAuto();
+      }
+      this.syncZenButtons();
+    });
+
+    this.zenStepBtn.addEventListener('click', async () => {
+      await this.runZenSingleStep();
+    });
+
+    this.zenInitialBtn.addEventListener('click', () => {
+      this.zenOutput.value = `seed:${this.engine.currentSeed}\n${this.getInitialDeckString(this.engine.currentSeed)}`;
+    });
+
+    this.zenStateBtn.addEventListener('click', () => {
+      this.zenOutput.value = this.getCurrentStateText();
+    });
+
+    this.zenCloseBtn.addEventListener('click', () => {
+      this.zenPanel.hidden = true;
+    });
+
+    this.zenLogClearBtn.addEventListener('click', () => {
+      this.zen.logs = [];
+      this.zenLog.textContent = 'Zen log';
+    });
+
+    this.zenLogToggleBtn.addEventListener('click', () => {
+      this.zenLogHidden = !this.zenLogHidden;
+      this.zenLog.hidden = this.zenLogHidden;
+      this.zenLogToggleBtn.textContent = this.zenLogHidden ? 'Show Log' : 'Hide Log';
+    });
+
+    this.zenDragHandle.addEventListener('pointerdown', (event) => {
+      this.zenDrag.active = true;
+      const rect = this.zenPanel.getBoundingClientRect();
+      this.zenPanel.style.left = `${rect.left}px`;
+      this.zenPanel.style.top = `${rect.top}px`;
+      this.zenPanel.style.right = 'auto';
+      this.zenPanel.style.position = 'fixed';
+      this.zenDrag.dx = event.clientX - rect.left;
+      this.zenDrag.dy = event.clientY - rect.top;
+      this.zenDragHandle.setPointerCapture(event.pointerId);
+    });
+
+    this.zenDragHandle.addEventListener('pointermove', (event) => {
+      if (!this.zenDrag.active) return;
+      const left = Math.max(0, Math.min(window.innerWidth - this.zenPanel.offsetWidth, event.clientX - this.zenDrag.dx));
+      const top = Math.max(0, Math.min(window.innerHeight - this.zenPanel.offsetHeight, event.clientY - this.zenDrag.dy));
+      this.zenPanel.style.left = `${left}px`;
+      this.zenPanel.style.top = `${top}px`;
+    });
+
+    this.zenDragHandle.addEventListener('pointerup', (event) => {
+      this.zenDrag.active = false;
+      this.zenDragHandle.releasePointerCapture(event.pointerId);
+    });
+
+    this.downloadDeckBtn.addEventListener('click', () => {
+      this.downloadDeckAnalysis();
+    });
+
+    this.syncZenButtons();
+
+  }
+
+  toggleZenPanel() {
+    this.zen.unlocked = true;
+    this.zenPanel.hidden = !this.zenPanel.hidden;
+  }
+
+  resetZenRunState() {
+    this.zen.undoBudget = 50;
+    this.zen.forbiddenMoves.clear();
+    this.zen.exhaustedStates.clear();
+    this.zen.pathDecisions = [];
+    this.zen.lastWinByAuto = false;
+  }
+
+  startFreshGame(seed = null, dialogToClose = null) {
+    this.stopZenAuto();
+    if (seed === null || seed === undefined) {
+      this.engine.startSingle();
+    } else {
+      this.engine.startSingle(seed);
+    }
+    this.campaignScore = 0;
+    this.notifiedState = 'playing';
+    this.hasSavedCurrentGame = false;
+    this.resetZenRunState();
+    if (dialogToClose?.open) {
+      dialogToClose.close();
+    }
+    this.renderAll();
+  }
+
+  getLevelRecords() {
+    try {
+      const raw = localStorage.getItem(LEVEL_RECORDS_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  saveLevelRecords(records) {
+    localStorage.setItem(LEVEL_RECORDS_KEY, JSON.stringify(records));
+  }
+
+  recordCuratedLevelWin() {
+    const index = CURATED_LEVELS.findIndex((level) => level.seed === this.engine.currentSeed);
+    if (index === -1) return;
+
+    const records = this.getLevelRecords();
+    const key = String(this.engine.currentSeed);
+    const elapsedSeconds = this.engine.elapsedSeconds();
+    const score = this.engine.calculateSequentialScore();
+    const existing = records[key] || { bestScore: 0, bestTime: null, wins: 0 };
+
+    records[key] = {
+      bestScore: Math.max(existing.bestScore || 0, score),
+      bestTime:
+        typeof existing.bestTime === 'number'
+          ? Math.min(existing.bestTime, elapsedSeconds)
+          : elapsedSeconds,
+      wins: (existing.wins || 0) + 1,
+      levelNumber: index + 1,
+    };
+
+    this.saveLevelRecords(records);
+  }
+
+  formatLevelTime(totalSeconds) {
+    if (typeof totalSeconds !== 'number' || !Number.isFinite(totalSeconds)) {
+      return 'No clear yet';
+    }
+    const mm = String(Math.floor(totalSeconds / 60)).padStart(2, '0');
+    const ss = String(totalSeconds % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  renderLevels() {
+    if (!this.levelsList) return;
+
+    this.levelsList.innerHTML = '';
+
+    const infinityTile = document.createElement('button');
+    infinityTile.type = 'button';
+    infinityTile.className = 'level-tile infinity';
+    infinityTile.dataset.levelMode = 'infinity';
+
+    const infinityNumber = document.createElement('span');
+    infinityNumber.className = 'level-number';
+    infinityNumber.textContent = '∞';
+    const infinityLabel = document.createElement('span');
+    infinityLabel.className = 'level-time';
+    infinityLabel.textContent = 'Random Game';
+
+    infinityTile.append(infinityNumber, infinityLabel);
+    this.levelsList.appendChild(infinityTile);
+
+    if (CURATED_LEVELS.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'level-empty';
+      empty.textContent = 'Add verified levels to CURATED_LEVELS in index.js.';
+      this.levelsList.appendChild(empty);
+      return;
+    }
+
+    const records = this.getLevelRecords();
+
+    CURATED_LEVELS.forEach((level, index) => {
+      const record = records[String(level.seed)] || null;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'level-tile';
+      button.dataset.levelSeed = String(level.seed);
+
+      const number = document.createElement('span');
+      number.className = 'level-number';
+      number.textContent = String(index + 1);
+
+      const time = document.createElement('span');
+      time.className = 'level-time';
+      time.textContent = level.time;
+
+      const moves = document.createElement('span');
+      moves.className = 'level-time';
+      moves.textContent = `${level.moves} moves`;
+
+      if (record?.bestTime) {
+        button.title = `Your best: ${this.formatLevelTime(record.bestTime)}`;
+      }
+
+      button.append(number, time, moves);
+      this.levelsList.appendChild(button);
+    });
+  }
+
+  logZen(message) {
+    const stamp = new Date().toLocaleTimeString();
+    this.zen.logs.push(`[${stamp}] ${message}`);
+    this.zen.logs = this.zen.logs.slice(-140);
+    this.zenLog.textContent = this.zen.logs.join('\n');
+  }
+
+  stateSignature(state) {
+    const cols = state.columns
+      .map((col) => col.map((c) => `${c.suit}${c.rank}${c.faceUp ? 'U' : 'D'}`).join('.'))
+      .join('|');
+    const stock = state.stock.map((c) => `${c.suit}${c.rank}${c.faceUp ? 'U' : 'D'}`).join('.');
+    return `${cols}#${stock}#${state.completed}`;
+  }
+
+  cloneState(state) {
+    return state.clone();
+  }
+
+  applyVirtualMove(state, move) {
+    if (move.type === 'deal') {
+      for (let i = 0; i < 3; i += 1) {
+        const card = state.stock.shift();
+        if (card) {
+          card.faceUp = true;
+          state.columns[i].push(card);
+        }
+      }
+    } else {
+      const source = state.columns[move.fromCol];
+      const moved = source.splice(move.fromIndex);
+      state.columns[move.toCol].push(...moved);
+      if (source.length > 0 && !source[source.length - 1].faceUp) {
+        source[source.length - 1].faceUp = true;
+      }
+    }
+    return ScorpionRules.removeCompletedRuns(state);
+  }
+
+  hasPotentialFuture(state) {
+    if (state.completed >= 4) return true;
+    const moves = ScorpionRules.listMoves(state.columns);
+    if (moves.length > 0) return true;
+    return state.stock.length >= 3;
+  }
+
+  countHidden(state) {
+    let hidden = 0;
+    for (const col of state.columns) {
+      for (const card of col) {
+        if (!card.faceUp) hidden += 1;
+      }
+    }
+    return hidden;
+  }
+
+  countEmpty(state) {
+    return state.columns.filter((col) => col.length === 0).length;
+  }
+
+  moveKey(move) {
+    if (move.type === 'deal') return 'deal';
+    return `${move.fromCol}:${move.fromIndex}->${move.toCol}`;
+  }
+
+  getForbiddenSet(stateSig) {
+    const existing = this.zen.forbiddenMoves.get(stateSig);
+    if (existing) return existing;
+    const created = new Set();
+    this.zen.forbiddenMoves.set(stateSig, created);
+    return created;
+  }
+
+  forbidMove(stateSig, moveKey) {
+    this.getForbiddenSet(stateSig).add(moveKey);
+  }
+
+  backtrackToBranch(deadStateSig = null) {
+    if (deadStateSig) {
+      this.zen.exhaustedStates.add(deadStateSig);
+    }
+
+    while (this.zen.undoBudget > 0 && this.engine.history.length > 0) {
+      this.engine.undo();
+      this.zen.undoBudget -= 1;
+
+      const sig = this.stateSignature(this.engine.state);
+
+      const undone = this.zen.pathDecisions.pop();
+      if (undone && undone.stateSig === sig) {
+        this.forbidMove(undone.stateSig, undone.moveKey);
+      }
+
+      const candidates = this.getAutoCandidates();
+      const viable = candidates.filter((c) => !c.dead);
+
+      this.logZen(`Undo backtrack used. Remaining undo budget: ${this.zen.undoBudget}`);
+
+      if (viable.length >= this.zen.minBranchOptions) {
+        return true;
+      }
+
+      // This node is still too constrained; treat it as part of the dead path.
+      this.zen.exhaustedStates.add(sig);
+    }
+
+    return false;
+  }
+
+  getAutoCandidates() {
+    const candidates = [];
+    const stateSig = this.stateSignature(this.engine.state);
+    const forbidden = this.getForbiddenSet(stateSig);
+    const moves = ScorpionRules.listMoves(this.engine.state.columns);
+
+    for (const move of moves) {
+      const key = this.moveKey({ type: 'move', fromCol: move.fromCol, fromIndex: move.fromIndex, toCol: move.toCol });
+      if (forbidden.has(key)) continue;
+
+      const virtual = this.cloneState(this.engine.state);
+      const beforeHidden = this.countHidden(virtual);
+      const beforeEmpty = this.countEmpty(virtual);
+      const removed = this.applyVirtualMove(virtual, {
+        type: 'move',
+        fromCol: move.fromCol,
+        fromIndex: move.fromIndex,
+        toCol: move.toCol,
+      });
+      const revealed = Math.max(0, beforeHidden - this.countHidden(virtual));
+      const empties = Math.max(0, this.countEmpty(virtual) - beforeEmpty);
+      const dead = !this.hasPotentialFuture(virtual);
+
+      let score = 8 + revealed * 90 + empties * 45 + removed * 420;
+      if (dead) score -= 8000;
+
+      candidates.push({
+        type: 'move',
+        fromCol: move.fromCol,
+        fromIndex: move.fromIndex,
+        toCol: move.toCol,
+        score,
+        dead,
+        key,
+      });
+    }
+
+    if (this.engine.state.stock.length >= 3) {
+      const key = this.moveKey({ type: 'deal' });
+      if (!forbidden.has(key)) {
+      const virtual = this.cloneState(this.engine.state);
+      const beforeHidden = this.countHidden(virtual);
+      const removed = this.applyVirtualMove(virtual, { type: 'deal' });
+      const revealed = Math.max(0, beforeHidden - this.countHidden(virtual));
+      const dead = !this.hasPotentialFuture(virtual);
+
+      let score = 3 + revealed * 80 + removed * 420;
+      if (dead) score -= 8000;
+
+      candidates.push({ type: 'deal', score, dead, key });
+      }
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates;
+  }
+
+  updateZenAutoButton() {
+    this.zenAutoBtn.textContent = this.zen.running ? 'Pause' : 'Auto Play';
+  }
+
+  syncZenButtons() {
+    this.zenPauseBtn.textContent = this.zen.running ? 'Pause' : 'Resume';
+    this.zenAutoBtn.textContent = this.zen.running ? 'Stop Auto' : 'Auto Play';
+  }
+
+  startZenAuto() {
+    this.zen.running = true;
+    this.syncZenButtons();
+    this.logZen('Auto pilot started.');
+
+    const tick = async () => {
+      if (!this.zen.running) return;
+      const progressed = await this.runZenSingleStep();
+      if (!progressed) {
+        this.stopZenAuto();
+        return;
+      }
+      this.zen.timer = setTimeout(tick, 280);
+    };
+
+    tick();
+  }
+
+  stopZenAuto() {
+    this.zen.running = false;
+    if (this.zen.timer) {
+      clearTimeout(this.zen.timer);
+      this.zen.timer = null;
+    }
+    this.syncZenButtons();
+  }
+
+  async runZenSingleStep() {
+    this.engine.syncGameState();
+    if (this.engine.gameState !== 'playing') {
+      this.logZen('No step executed: game is not in playing state.');
+      return false;
+    }
+
+    const sig = this.stateSignature(this.engine.state);
+
+    const candidates = this.getAutoCandidates();
+    const viable = candidates.filter((c) => !c.dead);
+    const best = viable[0];
+
+    if (!best && candidates.length > 0) {
+      for (const cand of candidates) {
+        this.forbidMove(sig, cand.key);
+      }
+      this.zen.exhaustedStates.add(sig);
+    }
+
+    if (!best) {
+      const recovered = this.backtrackToBranch(sig);
+      this.renderAll();
+      if (recovered) return true;
+      this.logZen('Dead end reached in every explored scenario.');
+      return false;
+    }
+
+    if (best.type === 'deal') {
+      const ok = this.engine.dealStock();
+      if (!ok) return false;
+      this.zen.pathDecisions.push({ stateSig: sig, moveKey: best.key });
+      this.logZen('DEAL C-1 -> C1,C2,C3');
+      this.renderAll();
+      return true;
+    }
+
+    return new Promise((resolve) => {
+      const headCard = this.engine.state.columns[best.fromCol][best.fromIndex];
+      const headText = headCard ? ScorpionRules.cardText(headCard) : '?';
+      this.board.animateAutoMove(best.fromCol, best.fromIndex, best.toCol, () => {
+        const moved = this.engine.moveStack(best.fromCol, best.fromIndex, best.toCol);
+        if (moved) {
+          this.zen.pathDecisions.push({ stateSig: sig, moveKey: best.key });
+          this.logZen(`${headText}C${best.fromCol + 1} -> C${best.toCol + 1}`);
+        } else {
+          this.forbidMove(sig, best.key);
+        }
+        this.renderAll();
+        resolve(moved);
+      });
+    });
+  }
+
+  getInitialDeckString(seed) {
+    const deck = this.engine.createShuffledDeck(seed);
+    return deck.map((card) => `${card.rank}${card.suit}`).join(' ');
+  }
+
+  getCurrentStateText() {
+    const cols = this.engine.state.columns
+      .map((col, i) => {
+        const text = col.map((card) => `${card.rank}${card.suit}${card.faceUp ? '' : '*'}`).join(' ');
+        return `C${i + 1}: ${text}`;
+      })
+      .join('\n');
+    const stock = this.engine.state.stock.map((card) => `${card.rank}${card.suit}`).join(' ');
+    return `seed:${this.engine.currentSeed}\n${cols}\nC-1: ${stock}`;
+  }
+
+  downloadDeckAnalysis() {
+    const seed = this.engine.currentSeed;
+    const content = [
+      `seed:${seed}`,
+      `deck:${this.getInitialDeckString(seed)}`,
+      `pilotWin:${this.zen.lastWinByAuto ? 'yes' : 'no'}`,
+      `playerWin:${this.zen.lastWinByAuto ? 'no' : 'yes'}`,
+      `noHungerHidden:${this.engine.countFaceDownTableau() === 0 ? 'yes' : 'partial'}`,
+    ].join('\n');
+
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${seed}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   showWelcome() {
     if (this.welcomeDialog) {
       this.welcomeDialog.showModal();
+    }
+  }
+
+  openLevelsDialog() {
+    this.renderLevels();
+    if (this.levelsDialog && !this.levelsDialog.open) {
+      this.levelsDialog.showModal();
     }
   }
 
@@ -1199,7 +1845,17 @@ class App {
 
     if (this.engine.gameState === 'won') {
       this.campaignScore += currentScore;
+      if (this.zen.running) {
+        this.zen.lastWinByAuto = true;
+      }
+      const autoSummary = this.zen.lastWinByAuto
+        ? ` | sim:${this.formatLevelTime(this.engine.elapsedSeconds())}, ${this.engine.moves} moves`
+        : '';
+      this.recordCuratedLevelWin();
+      this.renderLevels();
       this.winSummary.textContent = `Deck score: ${currentScore} pts. Total score: ${this.campaignScore} pts.`;
+      this.winAnalysis.textContent = `seed:${this.engine.currentSeed} | pilot:${this.zen.lastWinByAuto ? 'win' : 'not used'}${autoSummary} | hidden:${this.engine.countFaceDownTableau() === 0 ? 'clear' : 'remaining'}`;
+      this.stopZenAuto();
       this.winDialog.showModal();
       return;
     }
@@ -1208,6 +1864,7 @@ class App {
       this.gameOverSummary.textContent = `Final score: ${this.lastScoreAtEnd}. Save your high score!`;
       this.seedInput.value = String(this.engine.currentSeed);
       this.saveScoreBtn.disabled = this.hasSavedCurrentGame;
+      this.stopZenAuto();
       this.renderHighScores();
       this.gameOverDialog.showModal();
     }
