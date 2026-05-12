@@ -300,6 +300,22 @@ body {
   width: min(760px, 94vw);
 }
 
+.levels-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.levels-tab {
+  border: 1px solid rgba(69, 119, 108, 0.25);
+  background: #edf9f4;
+}
+
+.levels-tab.active {
+  background: linear-gradient(180deg, #b4e8d8 0%, #d4f6eb 100%);
+  border-color: rgba(36, 100, 88, 0.35);
+}
+
 .levels-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
@@ -353,6 +369,11 @@ body {
 
 .level-tile.infinity {
   background: linear-gradient(180deg, #ffe8bc 0%, #fff4d9 100%);
+}
+
+.level-tile.impossible {
+  background: linear-gradient(180deg, #ffd7ce 0%, #ffe8e2 100%);
+  border-color: rgba(139, 63, 45, 0.2);
 }
 
 @media (max-width: 680px) {

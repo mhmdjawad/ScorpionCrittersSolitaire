@@ -1,12 +1,13 @@
-const CACHE_NAME = 'scorpion-critters-v1';
+const SW_URL = new URL(self.location.href);
+const BUILD_VERSION = SW_URL.searchParams.get('build') || 'dev';
+const CACHE_PREFIX = 'scorpion-critters-';
+const CACHE_NAME = `${CACHE_PREFIX}${BUILD_VERSION}`;
 const APP_ASSETS = [
   './',
   './index.html',
-  './index.css',
-  './index.js',
+  `./index.css?v=${BUILD_VERSION}`,
+  `./index.js?v=${BUILD_VERSION}`,
   './README.md',
-  './screenshots/welcome.png',
-  './screenshots/game.png',
 ];
 
 self.addEventListener('install', (event) => {
@@ -23,7 +24,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== CACHE_NAME)
+          .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
           .map((key) => caches.delete(key)),
       ),
     ),
