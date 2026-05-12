@@ -987,9 +987,6 @@ class App {
     this.activeLevelTab = 'curated';
     this.levelRun = {
       mode: 'infinity',
-      rootSeed: null,
-      shiftAttempt: 0,
-      revealBoost: 0,
     };
 
     this.zen = {
@@ -1091,17 +1088,8 @@ class App {
     });
 
     document.getElementById('playNewDeckBtn').addEventListener('click', () => {
-      if (this.levelRun.mode === 'impossible' && Number.isFinite(this.levelRun.rootSeed)) {
-        const nextAttempt = this.levelRun.shiftAttempt + 1;
-        const nextSeed = this.computeShiftedSeed(this.levelRun.rootSeed, nextAttempt);
-        this.startFreshGame(nextSeed, this.winDialog, {
-          mode: 'impossible',
-          rootSeed: this.levelRun.rootSeed,
-          shiftAttempt: nextAttempt,
-        });
-        return;
-      }
-      this.startFreshGame();
+      const nextSeed = this.pickNonBlacklistedSeed();
+      this.startFreshGame(nextSeed, this.winDialog, { mode: 'infinity' });
     });
 
     this.saveScoreBtn.addEventListener('click', () => {
@@ -1114,17 +1102,8 @@ class App {
     });
 
     document.getElementById('newAfterGameOverBtn').addEventListener('click', () => {
-      if (this.levelRun.mode === 'impossible' && Number.isFinite(this.levelRun.rootSeed)) {
-        const nextAttempt = this.levelRun.shiftAttempt + 1;
-        const nextSeed = this.computeShiftedSeed(this.levelRun.rootSeed, nextAttempt);
-        this.startFreshGame(nextSeed, this.gameOverDialog, {
-          mode: 'impossible',
-          rootSeed: this.levelRun.rootSeed,
-          shiftAttempt: nextAttempt,
-        });
-        return;
-      }
-      this.startFreshGame(null, this.gameOverDialog);
+      const nextSeed = this.pickNonBlacklistedSeed();
+      this.startFreshGame(nextSeed, this.gameOverDialog, { mode: 'infinity' });
     });
 
     this.playSeedBtn.addEventListener('click', () => {
@@ -1158,29 +1137,21 @@ class App {
       if (!(button instanceof HTMLElement)) return;
 
       if (button.dataset.levelMode === 'infinity') {
-        this.startFreshGame(null, this.levelsDialog, { mode: 'infinity', rootSeed: null, shiftAttempt: 0 });
+        this.startFreshGame(null, this.levelsDialog, { mode: 'infinity' });
         return;
       }
 
       if (button.dataset.levelMode === 'impossible') {
         const impossibleSeed = Number(button.dataset.levelSeed);
         if (!Number.isFinite(impossibleSeed)) return;
-        this.startFreshGame(impossibleSeed, this.levelsDialog, {
-          mode: 'impossible',
-          rootSeed: impossibleSeed,
-          shiftAttempt: 0,
-        });
+        this.startFreshGame(impossibleSeed, this.levelsDialog, { mode: 'impossible' });
         return;
       }
 
       const seed = Number(button.dataset.levelSeed);
       if (!Number.isFinite(seed)) return;
 
-      this.startFreshGame(seed, this.levelsDialog, {
-        mode: 'curated',
-        rootSeed: seed,
-        shiftAttempt: 0,
-      });
+      this.startFreshGame(seed, this.levelsDialog, { mode: 'curated' });
     });
 
     this.levelTabs?.addEventListener('click', (event) => {
@@ -1311,116 +1282,6 @@ class App {
     return seed;
   }
 
-  computeShiftedSeed(baseSeed, shiftAttempt) {
-    const base = Number(baseSeed) || Date.now();
-    const attempt = Math.max(1, Number(shiftAttempt) || 1);
-    let x = (base >>> 0) ^ ((attempt * 2654435761) >>> 0);
-    x ^= x << 13;
-    x ^= x >>> 17;
-    x ^= x << 5;
-    const mixed = x >>> 0;
-    return 1700000000000 + mixed + attempt * 104729;
-  }
-
-  applyShiftedMaskBoost(shiftAttempt, rootSeed = null) {
-    const attempt = Math.max(0, Number(shiftAttempt) || 0);
-    if (attempt <= 0) return 0;
-
-    // Compute which card IDs were originally masked in the root board so they
-    // are guaranteed to end up in open positions in the shifted board.
-    const rootMaskedIds = new Set();
-    if (Number.isFinite(Number(rootSeed))) {
-      const rootState = this.engine.createClassicState(Number(rootSeed));
-      for (let col = 0; col < 4; col += 1) {
-        for (let idx = 0; idx < 3; idx += 1) {
-          const card = rootState.columns[col]?.[idx];
-          if (card) rootMaskedIds.add(card.id);
-        }
-      }
-    }
-
-    // Collect the 12 masked slots in the current (shifted) board.
-    const maskedSlots = [];
-    for (let col = 0; col < 4; col += 1) {
-      for (let idx = 0; idx < 3; idx += 1) {
-        if (this.engine.state.columns[col]?.[idx]) {
-          maskedSlots.push({ col, idx });
-        }
-      }
-    }
-
-    if (maskedSlots.length === 0) return 0;
-
-    const isMaskedSlot = new Set(maskedSlots.map((slot) => `${slot.col}:${slot.idx}`));
-
-    // Split open cards into safe (never masked in root) and unsafe (were masked in root).
-    const safeOpen = [];
-    const unsafeOpen = [];
-    for (let col = 0; col < this.engine.state.columns.length; col += 1) {
-      const pile = this.engine.state.columns[col];
-      for (let idx = 0; idx < pile.length; idx += 1) {
-        if (isMaskedSlot.has(`${col}:${idx}`)) continue;
-        if (pile[idx].faceUp) {
-          if (rootMaskedIds.has(pile[idx].id)) {
-            unsafeOpen.push({ col, idx });
-          } else {
-            safeOpen.push({ col, idx });
-          }
-        }
-      }
-    }
-
-    // Shuffle both pools with deterministic RNG.
-    const shuffleSeed = this.computeShiftedSeed(this.engine.currentSeed, attempt);
-    const rng = new RNG(shuffleSeed);
-    const fisherYates = (arr) => {
-      for (let i = arr.length - 1; i > 0; i -= 1) {
-        const j = Math.floor(rng.next() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-    };
-    fisherYates(safeOpen);
-    fisherYates(unsafeOpen);
-
-    // Build the ordered list of open slots to assign to masked positions:
-    // safe cards fill first, unsafe only as fallback — ensures root-masked
-    // cards are never placed back into a masked slot if safe cards exist.
-    const orderedOpen = [...safeOpen, ...unsafeOpen];
-
-    if (orderedOpen.length === 0) return 0;
-
-    const swapCount = Math.min(maskedSlots.length, orderedOpen.length);
-    for (let i = 0; i < swapCount; i += 1) {
-      const masked = maskedSlots[i];
-      const open = orderedOpen[i];
-      const maskedCard = this.engine.state.columns[masked.col][masked.idx];
-      const openCard = this.engine.state.columns[open.col][open.idx];
-      this.engine.state.columns[masked.col][masked.idx] = openCard;
-      this.engine.state.columns[open.col][open.idx] = maskedCard;
-      this.engine.state.columns[masked.col][masked.idx].faceUp = false;
-      this.engine.state.columns[open.col][open.idx].faceUp = true;
-    }
-
-    this.engine.initialState = this.engine.state.clone();
-    this.engine.syncGameState();
-    return swapCount;
-  }
-
-  buildShiftedRetryPlan() {
-    const rootSeed = Number.isFinite(this.levelRun.rootSeed) ? this.levelRun.rootSeed : this.engine.currentSeed;
-    let nextAttempt = Math.max(1, (this.levelRun.shiftAttempt || 0) + 1);
-    let seed = this.computeShiftedSeed(rootSeed, nextAttempt);
-
-    if (this.levelRun.mode !== 'impossible') {
-      while (BLACKLISTED_SEEDS.includes(seed)) {
-        nextAttempt += 1;
-        seed = this.computeShiftedSeed(rootSeed, nextAttempt);
-      }
-    }
-
-    return { rootSeed, nextAttempt, seed };
-  }
-
   startFreshGame(seed = null, dialogToClose = null, runMeta = null) {
     this.stopZenAuto();
     if (seed === null || seed === undefined) {
@@ -1430,15 +1291,9 @@ class App {
     }
 
     const mode = runMeta?.mode || (seed === null || seed === undefined ? 'infinity' : 'custom');
-    const rootSeed = Number.isFinite(runMeta?.rootSeed) ? Number(runMeta.rootSeed) : (Number.isFinite(seed) ? Number(seed) : null);
-    const shiftAttempt = Math.max(0, Number(runMeta?.shiftAttempt) || 0);
-    const revealBoost = this.applyShiftedMaskBoost(shiftAttempt, rootSeed);
 
     this.levelRun = {
       mode,
-      rootSeed,
-      shiftAttempt,
-      revealBoost,
     };
 
     this.campaignScore = 0;
@@ -1866,16 +1721,12 @@ class App {
         console.log(`[Zen list] appended BLACKLISTED_SEEDS seed:${this.engine.currentSeed}`);
       }
       if (this.zenAutoNewGameChk?.checked) {
-        const retry = this.buildShiftedRetryPlan();
-        console.log(`[Zen shift] from:${this.engine.currentSeed} root:${retry.rootSeed} next:${retry.seed} attempt:${retry.nextAttempt}`);
+        const nextSeed = this.pickNonBlacklistedSeed();
+        console.log(`[Zen next] from:${this.engine.currentSeed} next:${nextSeed}`);
         this.logZen('Auto new game …');
         this.zen.logs = [];
         this.zenLog.textContent = 'Zen log';
-        this.startFreshGame(retry.seed, null, {
-          mode: this.levelRun.mode,
-          rootSeed: retry.rootSeed,
-          shiftAttempt: retry.nextAttempt,
-        });
+        this.startFreshGame(nextSeed, null, { mode: 'infinity' });
         this.zen.running = true;
         this.syncZenButtons();
         this.logZen('Auto pilot continued on new game.');
@@ -2164,17 +2015,13 @@ class App {
       this.winAnalysis.textContent = `seed:${this.engine.currentSeed} | pilot:${this.zen.lastWinByAuto ? 'win' : 'not used'}${autoSummary} | hidden:${this.engine.countFaceDownTableau() === 0 ? 'clear' : 'remaining'}`;
 
       if (this.zen.running && this.zenAutoNewGameChk?.checked) {
-        const retry = this.buildShiftedRetryPlan();
+        const nextSeed = this.pickNonBlacklistedSeed();
         console.log(`[Zen success] seed:${this.engine.currentSeed} moves:${this.engine.moves} time:${this.engine.elapsedSeconds()}s score:${currentScore}`);
-        console.log(`[Zen shift] from:${this.engine.currentSeed} root:${retry.rootSeed} next:${retry.seed} attempt:${retry.nextAttempt}`);
+        console.log(`[Zen next] from:${this.engine.currentSeed} next:${nextSeed}`);
         this.logZen('Solved. Auto new game …');
         this.zen.logs = [];
         this.zenLog.textContent = 'Zen log';
-        this.startFreshGame(retry.seed, null, {
-          mode: this.levelRun.mode,
-          rootSeed: retry.rootSeed,
-          shiftAttempt: retry.nextAttempt,
-        });
+        this.startFreshGame(nextSeed, null, { mode: 'infinity' });
         this.zen.running = true;
         this.syncZenButtons();
         this.logZen('Auto pilot continued on new game after success.');
@@ -2187,14 +2034,8 @@ class App {
     }
 
     if (this.engine.gameState === 'stuck') {
-      if (this.levelRun.mode === 'impossible' && Number.isFinite(this.levelRun.rootSeed)) {
-        const retry = this.buildShiftedRetryPlan();
-        this.gameOverSummary.textContent = `Impossible deck failed. Next shifted seed: ${retry.seed} (attempt ${retry.nextAttempt}).`;
-        this.seedInput.value = String(retry.seed);
-      } else {
-        this.gameOverSummary.textContent = `Final score: ${this.lastScoreAtEnd}. Save your high score!`;
-        this.seedInput.value = String(this.engine.currentSeed);
-      }
+      this.gameOverSummary.textContent = `Final score: ${this.lastScoreAtEnd}. Save your high score!`;
+      this.seedInput.value = String(this.engine.currentSeed);
       this.saveScoreBtn.disabled = this.hasSavedCurrentGame;
       this.stopZenAuto();
       this.renderHighScores();
