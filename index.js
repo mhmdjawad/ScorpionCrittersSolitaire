@@ -994,6 +994,9 @@ class App {
       exhaustedStates: new Set(),
       minBranchOptions: 3,
       pathDecisions: [],
+      plannedSeed: null,
+      plannedSteps: [],
+      plannedIndex: 0,
       logs: [],
       lastWinByAuto: false,
     };
@@ -1024,6 +1027,29 @@ class App {
       this.renderStatus();
       this.board.draw();
     }, 1000);
+  }
+
+  /**
+   * Score a move heuristically without applying it.
+   * Higher scores indicate better moves.
+   * @param {MoveInfo} move
+   * @returns {number}
+   */
+  scoreMoveHeuristic(move) {
+    const beforeScore = this.engine.score;
+    const beforeMoves = this.engine.moves;
+    
+    // Try the move
+    const moved = this.engine.moveStack(move.fromCol, move.fromIndex, move.toCol);
+    if (!moved) return 0;
+    
+    // Calculate the score delta from this move
+    const scoreDelta = this.engine.score - beforeScore;
+    
+    // Undo the move
+    this.engine.undo();
+    
+    return scoreDelta;
   }
 
   bindButtons() {
@@ -1069,16 +1095,54 @@ class App {
     document.getElementById('hintBtn').addEventListener('click', () => {
       const moves = ScorpionRules.listMoves(this.engine.state.columns);
       if (moves.length === 0) {
-        this.hintList.textContent = 'No legal moves right now.';
+        this.hintList.innerHTML = '<div style="padding: 1rem; text-align: center; color: #999;">No legal moves right now.</div>';
       } else {
-        this.hintList.textContent = moves
-          .slice(0, 180)
-          .map((m, i) => {
-            const target = this.engine.state.columns[m.toCol][this.engine.state.columns[m.toCol].length - 1];
-            const targetText = target ? ScorpionRules.cardText(target) : 'Empty';
-            return `${i + 1}. C${m.fromCol + 1} ${ScorpionRules.cardText(m.card)} -> C${m.toCol + 1} ${targetText}`;
-          })
-          .join('\n');
+        this.hintList.innerHTML = '';
+        const scoredMoves = moves.slice(0, 180).map((m) => ({
+          move: m,
+          score: this.scoreMoveHeuristic(m),
+        }));
+        
+        // Sort by score descending
+        scoredMoves.sort((a, b) => b.score - a.score);
+        
+        scoredMoves.forEach((item, i) => {
+          const m = item.move;
+          const target = this.engine.state.columns[m.toCol][this.engine.state.columns[m.toCol].length - 1];
+          const targetText = target ? ScorpionRules.cardText(target) : 'Empty';
+          
+          const moveRow = document.createElement('div');
+          moveRow.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid #eee; justify-content: space-between;';
+          
+          const moveInfo = document.createElement('div');
+          moveInfo.style.cssText = 'flex: 1;';
+          moveInfo.textContent = `${i + 1}. C${m.fromCol + 1} ${ScorpionRules.cardText(m.card)} → C${m.toCol + 1} ${targetText}`;
+          
+          const scoreLabel = document.createElement('div');
+          scoreLabel.style.cssText = 'background: #f0f0f0; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
+          scoreLabel.textContent = `${item.score.toFixed(0)} pts`;
+          
+          const applyBtn = document.createElement('button');
+          applyBtn.textContent = 'Apply';
+          applyBtn.style.cssText = 'padding: 0.25rem 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;';
+          applyBtn.addEventListener('click', () => {
+            this.engine.moveStack(m.fromCol, m.fromIndex, m.toCol);
+            this.notifiedState = 'playing';
+            this.hintDialog.close();
+            this.renderAll();
+          });
+          applyBtn.addEventListener('mouseenter', () => {
+            applyBtn.style.background = '#1976D2';
+          });
+          applyBtn.addEventListener('mouseleave', () => {
+            applyBtn.style.background = '#2196F3';
+          });
+          
+          moveRow.appendChild(moveInfo);
+          moveRow.appendChild(scoreLabel);
+          moveRow.appendChild(applyBtn);
+          this.hintList.appendChild(moveRow);
+        });
       }
       this.hintDialog.showModal();
     });
@@ -1267,6 +1331,9 @@ class App {
     this.zen.forbiddenMoves.clear();
     this.zen.exhaustedStates.clear();
     this.zen.pathDecisions = [];
+    this.zen.plannedSeed = null;
+    this.zen.plannedSteps = [];
+    this.zen.plannedIndex = 0;
     this.zen.lastWinByAuto = false;
   }
 
@@ -1346,6 +1413,7 @@ class App {
         curated: `const CURATED_LEVELS = [\n${CURATED_LEVELS.map((level) => `  { seed: ${level.seed}, time: '${level.time}', moves: ${level.moves} },`).join('\n')}\n];`,
       }),
     };
+    window.solveSeed = (seed) => this.solveSeed(seed);
   }
 
   recordCuratedLevelWin() {
@@ -1650,6 +1718,179 @@ class App {
     return candidates;
   }
 
+  /** @param {BoardState} state */
+  getAutoCandidatesForState(state) {
+    const candidates = [];
+    const moves = ScorpionRules.listMoves(state.columns);
+
+    for (const move of moves) {
+      const virtual = this.cloneState(state);
+      const beforeHidden = this.countHidden(virtual);
+      const beforeEmpty = this.countEmpty(virtual);
+      const removed = this.applyVirtualMove(virtual, {
+        type: 'move',
+        fromCol: move.fromCol,
+        fromIndex: move.fromIndex,
+        toCol: move.toCol,
+      });
+      const revealed = Math.max(0, beforeHidden - this.countHidden(virtual));
+      const empties = Math.max(0, this.countEmpty(virtual) - beforeEmpty);
+      const dead = !this.hasPotentialFuture(virtual);
+
+      let score = 8 + revealed * 90 + empties * 45 + removed * 420;
+      if (dead) score -= 8000;
+
+      candidates.push({
+        type: 'move',
+        fromCol: move.fromCol,
+        fromIndex: move.fromIndex,
+        toCol: move.toCol,
+        score,
+        dead,
+      });
+    }
+
+    if (state.stock.length >= 3) {
+      const virtual = this.cloneState(state);
+      const beforeHidden = this.countHidden(virtual);
+      const removed = this.applyVirtualMove(virtual, { type: 'deal' });
+      const revealed = Math.max(0, beforeHidden - this.countHidden(virtual));
+      const dead = !this.hasPotentialFuture(virtual);
+
+      let score = 3 + revealed * 80 + removed * 420;
+      if (dead) score -= 8000;
+
+      candidates.push({ type: 'deal', score, dead });
+    }
+
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates;
+  }
+
+  /** @param {{type:'move'|'deal', fromCol?:number, fromIndex?:number, toCol?:number, score:number}} step @param {BoardState} state */
+  formatSolveQueueStep(step, state) {
+    if (step.type === 'deal') {
+      return `DEAL C-1 -> C1,C2,C3 | score:${Math.round(step.score)}`;
+    }
+    const headCard = state.columns[step.fromCol]?.[step.fromIndex];
+    const headText = headCard ? ScorpionRules.cardText(headCard) : '?';
+    return `${headText} C${step.fromCol + 1} -> C${step.toCol + 1} | score:${Math.round(step.score)}`;
+  }
+
+  /** @param {BoardState} inputState */
+  buildSolutionFromState(inputState) {
+    const state = this.cloneState(inputState);
+    const queue = [];
+    const steps = [];
+    const seen = new Set();
+    const maxSteps = 1500;
+
+    for (let i = 0; i < maxSteps; i += 1) {
+      if (state.completed >= 4) {
+        return { solved: true, queue, steps };
+      }
+
+      const sig = this.stateSignature(state);
+      if (seen.has(sig)) {
+        return { solved: false, queue };
+      }
+      seen.add(sig);
+
+      const candidates = this.getAutoCandidatesForState(state);
+      const best = candidates.find((c) => !c.dead);
+      if (!best) {
+        return { solved: false, queue, steps };
+      }
+
+      queue.push(this.formatSolveQueueStep(best, state));
+      steps.push({
+        type: best.type,
+        fromCol: best.fromCol,
+        fromIndex: best.fromIndex,
+        toCol: best.toCol,
+        score: best.score,
+      });
+      this.applyVirtualMove(state, best);
+    }
+
+    return { solved: state.completed >= 4, queue, steps };
+  }
+
+  /** @param {number} seed */
+  buildSeedSolution(seed) {
+    const state = this.engine.createClassicState(seed);
+    return this.buildSolutionFromState(state);
+  }
+
+  ensureZenPlanFromCurrentState() {
+    const seed = this.engine.currentSeed;
+    if (this.zen.plannedSeed === seed && this.zen.plannedSteps.length > 0) {
+      return true;
+    }
+
+    const result = this.buildSolutionFromState(this.engine.state);
+    const steps = Array.isArray(result.steps) ? result.steps : [];
+    if (!result.solved || steps.length === 0) {
+      this.zen.plannedSeed = seed;
+      this.zen.plannedSteps = [];
+      this.zen.plannedIndex = 0;
+      return false;
+    }
+
+    this.zen.plannedSeed = seed;
+    this.zen.plannedSteps = steps;
+    this.zen.plannedIndex = 0;
+    this.logZen(`Plan ready: ${steps.length} steps.`);
+    return true;
+  }
+
+  /** @param {string} fileName @param {string} content */
+  downloadTextFile(fileName, content) {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  /** @param {number|string} seedInput */
+  solveSeed(seedInput) {
+    const seed = Number(seedInput);
+    if (!Number.isFinite(seed)) {
+      throw new Error('solveSeed(seed) expects a numeric seed.');
+    }
+
+    const deck = this.getInitialDeckString(seed);
+    const result = this.buildSeedSolution(seed);
+
+    const queueText = result.solved && result.queue.length > 0
+      ? result.queue.map((line, i) => `${i + 1}. ${line}`).join('\n')
+      : 'No full solution path found with no-undo greedy search.';
+
+    const content = [
+      `seed: ${seed}`,
+      `deck: ${deck}`,
+      'solution queue',
+      queueText,
+    ].join('\n');
+
+    this.downloadTextFile(`${seed}.txt`, content);
+    this.zenOutput.value = content;
+    console.log(content);
+
+    return {
+      seed,
+      solved: result.solved,
+      steps: result.queue.length,
+      fileName: `${seed}.txt`,
+      content,
+    };
+  }
+
   updateZenAutoButton() {
     this.zenAutoBtn.textContent = this.zen.running ? 'Pause' : 'Auto Play';
   }
@@ -1693,25 +1934,9 @@ class App {
       return false;
     }
 
-    const sig = this.stateSignature(this.engine.state);
-
-    const candidates = this.getAutoCandidates();
-    const viable = candidates.filter((c) => !c.dead);
-    const best = viable[0];
-
-    if (!best && candidates.length > 0) {
-      for (const cand of candidates) {
-        this.forbidMove(sig, cand.key);
-      }
-      this.zen.exhaustedStates.add(sig);
-    }
-
-    if (!best) {
-      const recovered = this.backtrackToBranch(sig);
-      this.renderAll();
-      if (recovered) return true;
-      this.logZen('Dead end reached in every explored scenario.');
+    if (!this.ensureZenPlanFromCurrentState()) {
       const appendedBlacklisted = this.appendBlacklistedSeed(this.engine.currentSeed);
+      this.logZen('No full no-undo plan for this run.');
       console.log(`[Zen dead end] seed:${this.engine.currentSeed} moves:${this.engine.moves} time:${this.engine.elapsedSeconds()}s`);
       if (appendedBlacklisted) {
         console.log(`[Zen list] appended BLACKLISTED_SEEDS seed:${this.engine.currentSeed}`);
@@ -1731,25 +1956,29 @@ class App {
       return false;
     }
 
-    if (best.type === 'deal') {
+    const step = this.zen.plannedSteps[this.zen.plannedIndex];
+    if (!step) {
+      this.logZen('Plan fully consumed.');
+      return false;
+    }
+
+    if (step.type === 'deal') {
       const ok = this.engine.dealStock();
       if (!ok) return false;
-      this.zen.pathDecisions.push({ stateSig: sig, moveKey: best.key });
-      this.logZen('DEAL C-1 -> C1,C2,C3');
+      this.zen.plannedIndex += 1;
+      this.logZen(`DEAL C-1 -> C1,C2,C3 | score:${Math.round(step.score)}`);
       this.renderAll();
       return true;
     }
 
     return new Promise((resolve) => {
-      const headCard = this.engine.state.columns[best.fromCol][best.fromIndex];
+      const headCard = this.engine.state.columns[step.fromCol]?.[step.fromIndex];
       const headText = headCard ? ScorpionRules.cardText(headCard) : '?';
-      this.board.animateAutoMove(best.fromCol, best.fromIndex, best.toCol, () => {
-        const moved = this.engine.moveStack(best.fromCol, best.fromIndex, best.toCol);
+      this.board.animateAutoMove(step.fromCol, step.fromIndex, step.toCol, () => {
+        const moved = this.engine.moveStack(step.fromCol, step.fromIndex, step.toCol);
         if (moved) {
-          this.zen.pathDecisions.push({ stateSig: sig, moveKey: best.key });
-          this.logZen(`${headText}C${best.fromCol + 1} -> C${best.toCol + 1}`);
-        } else {
-          this.forbidMove(sig, best.key);
+          this.zen.plannedIndex += 1;
+          this.logZen(`${headText}C${step.fromCol + 1} -> C${step.toCol + 1} | score:${Math.round(step.score)}`);
         }
         this.renderAll();
         resolve(moved);
