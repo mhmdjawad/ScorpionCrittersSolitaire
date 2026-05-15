@@ -782,7 +782,7 @@ class CanvasBoard {
     this.ctx.font = `${Math.max(12, Math.floor(this.cardW * 0.13))}px "Baloo 2"`;
     this.ctx.textAlign = 'center';
     this.ctx.fillText(
-      'C-1',
+      'C0',
       this.stockRect.x + this.stockRect.w / 2,
       this.stockRect.y + this.stockRect.h + 16,
     );
@@ -1011,7 +1011,9 @@ class App {
 
     this.bindButtons();
     this.registerServiceWorker();
-    this.showWelcome();
+    if (!resumed) {
+      this.showWelcome();
+    }
     this.renderLevels();
     this.renderHighScores();
     this.renderAll();
@@ -1095,13 +1097,24 @@ class App {
 
     document.getElementById('hintBtn').addEventListener('click', () => {
       const moves = ScorpionRules.listMoves(this.engine.state.columns);
-      if (moves.length === 0) {
+      const hasExtraSet = this.engine.state.stock.length >= 3;
+      if (moves.length === 0 && !hasExtraSet) {
         this.hintList.innerHTML = '<div style="padding: 1rem; text-align: center; color: #999;">No legal moves right now.</div>';
       } else {
         this.hintList.innerHTML = '';
+        const currentSolve = this.buildSolutionFromState(this.engine.state);
+        const recommendedStep = currentSolve.solved && Array.isArray(currentSolve.steps) && currentSolve.steps.length > 0
+          ? currentSolve.steps[0]
+          : null;
         const scoredMoves = moves.slice(0, 180).map((m) => ({
           move: m,
           score: this.scoreMoveHeuristic(m),
+          isZenOptimal:
+            Boolean(recommendedStep)
+            && recommendedStep.type === 'move'
+            && recommendedStep.fromCol === m.fromCol
+            && recommendedStep.fromIndex === m.fromIndex
+            && recommendedStep.toCol === m.toCol,
         }));
         
         // Sort by score descending
@@ -1120,8 +1133,10 @@ class App {
           moveInfo.textContent = `${i + 1}. C${m.fromCol + 1} ${ScorpionRules.cardText(m.card)} → C${m.toCol + 1} ${targetText}`;
           
           const scoreLabel = document.createElement('div');
-          scoreLabel.style.cssText = 'background: #f0f0f0; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
-          scoreLabel.textContent = `${item.score.toFixed(0)} pts`;
+          scoreLabel.style.cssText = item.isZenOptimal
+            ? 'background: #f0f0f0; color: #444; opacity: 0.45; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;'
+            : 'background: #f0f0f0; opacity: 0.2; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
+          scoreLabel.textContent = item.isZenOptimal ? '★' : '';
           
           const applyBtn = document.createElement('button');
           applyBtn.textContent = 'Apply';
@@ -1144,6 +1159,43 @@ class App {
           moveRow.appendChild(applyBtn);
           this.hintList.appendChild(moveRow);
         });
+
+        if (hasExtraSet) {
+          const isRecommendedDeal = Boolean(recommendedStep) && recommendedStep.type === 'deal';
+          const extraRow = document.createElement('div');
+          extraRow.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid #eee; justify-content: space-between; background: #fafcff;';
+
+          const extraInfo = document.createElement('div');
+          extraInfo.style.cssText = 'flex: 1;';
+          extraInfo.textContent = 'Use Extra Set: DEAL C0 -> C1,C2,C3';
+
+          const extraScoreLabel = document.createElement('div');
+          extraScoreLabel.style.cssText = isRecommendedDeal
+            ? 'background: #f0f0f0; color: #444; opacity: 0.45; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;'
+            : 'background: #f0f0f0; opacity: 0.2; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
+          extraScoreLabel.textContent = isRecommendedDeal ? '★' : '';
+
+          const extraApplyBtn = document.createElement('button');
+          extraApplyBtn.textContent = 'Apply';
+          extraApplyBtn.style.cssText = 'padding: 0.25rem 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;';
+          extraApplyBtn.addEventListener('click', () => {
+            this.engine.dealStock();
+            this.notifiedState = 'playing';
+            this.hintDialog.close();
+            this.renderAll();
+          });
+          extraApplyBtn.addEventListener('mouseenter', () => {
+            extraApplyBtn.style.background = '#1976D2';
+          });
+          extraApplyBtn.addEventListener('mouseleave', () => {
+            extraApplyBtn.style.background = '#2196F3';
+          });
+
+          extraRow.appendChild(extraInfo);
+          extraRow.appendChild(extraScoreLabel);
+          extraRow.appendChild(extraApplyBtn);
+          this.hintList.appendChild(extraRow);
+        }
       }
       this.hintDialog.showModal();
     });
@@ -1431,6 +1483,9 @@ class App {
       }),
     };
     window.solveSeed = (seed) => this.solveSeed(seed);
+    window.getCurrentDeckSet = () => this.stateToRaw(this.engine.state);
+    window.solveCurrentDeckSet = () => this.solveCurrentDeckSet();
+    window.solveDeckSet = (deckSet) => this.solveDeckSet(deckSet);
   }
 
   recordCuratedLevelWin() {
@@ -1787,7 +1842,7 @@ class App {
   /** @param {{type:'move'|'deal', fromCol?:number, fromIndex?:number, toCol?:number, score:number}} step @param {BoardState} state */
   formatSolveQueueStep(step, state) {
     if (step.type === 'deal') {
-      return `DEAL C-1 -> C1,C2,C3 | score:${Math.round(step.score)}`;
+      return `DEAL C0 -> C1,C2,C3 | score:${Math.round(step.score)}`;
     }
     const headCard = state.columns[step.fromCol]?.[step.fromIndex];
     const headText = headCard ? ScorpionRules.cardText(headCard) : '?';
@@ -1809,7 +1864,7 @@ class App {
 
       const sig = this.stateSignature(state);
       if (seen.has(sig)) {
-        return { solved: false, queue };
+        return { solved: false, queue, steps };
       }
       seen.add(sig);
 
@@ -1837,6 +1892,79 @@ class App {
   buildSeedSolution(seed) {
     const state = this.engine.createClassicState(seed);
     return this.buildSolutionFromState(state);
+  }
+
+  /** @param {BoardState} state @param {string} label */
+  buildStateSolutionText(state, label) {
+    const result = this.buildSolutionFromState(state);
+    const queueText = result.solved && result.queue.length > 0
+      ? result.queue.map((line, i) => `${i + 1}. ${line}`).join('\n')
+      : 'No full solution path found with no-undo greedy search.';
+
+    const stateText = this.getStateText(state);
+    const content = [
+      `source: ${label}`,
+      stateText,
+      'solution queue',
+      queueText,
+    ].join('\n');
+
+    return { result, content };
+  }
+
+  /** @param {BoardState} state */
+  getStateText(state) {
+    const cols = state.columns
+      .map((col, i) => {
+        const text = col.map((card) => `${card.rank}${card.suit}${card.faceUp ? '' : '*'}`).join(' ');
+        return `C${i + 1}: ${text}`;
+      })
+      .join('\n');
+    const stock = state.stock.map((card) => `${card.rank}${card.suit}`).join(' ');
+    return `${cols}\nC0: ${stock}`;
+  }
+
+  solveCurrentDeckSet() {
+    const state = this.cloneState(this.engine.state);
+    const label = `current-seed-${this.engine.currentSeed}`;
+    const { result, content } = this.buildStateSolutionText(state, label);
+    const fileName = `${this.engine.currentSeed}-current-state.txt`;
+
+    this.downloadTextFile(fileName, content);
+    this.zenOutput.value = content;
+    console.log(content);
+
+    return {
+      source: label,
+      solved: result.solved,
+      steps: result.queue.length,
+      fileName,
+      content,
+    };
+  }
+
+  /** @param {string|{columns:Array<Array<{id:string,suit:SuitCode,rank:number,faceUp:boolean}>>,stock:Array<{id:string,suit:SuitCode,rank:number,faceUp:boolean}>,completed:number}} deckSetInput */
+  solveDeckSet(deckSetInput) {
+    const raw = typeof deckSetInput === 'string' ? JSON.parse(deckSetInput) : deckSetInput;
+    if (!raw || !Array.isArray(raw.columns) || !Array.isArray(raw.stock)) {
+      throw new Error('solveDeckSet(deckSet) expects a raw state object (columns, stock, completed) or JSON string.');
+    }
+
+    const state = this.rawToState(raw);
+    const { result, content } = this.buildStateSolutionText(state, 'custom-deck-set');
+    const fileName = `custom-deck-set-${Date.now()}.txt`;
+
+    this.downloadTextFile(fileName, content);
+    this.zenOutput.value = content;
+    console.log(content);
+
+    return {
+      source: 'custom-deck-set',
+      solved: result.solved,
+      steps: result.queue.length,
+      fileName,
+      content,
+    };
   }
 
   ensureZenPlanFromCurrentState() {
@@ -1983,7 +2111,7 @@ class App {
       const ok = this.engine.dealStock();
       if (!ok) return false;
       this.zen.plannedIndex += 1;
-      this.logZen(`DEAL C-1 -> C1,C2,C3 | score:${Math.round(step.score)}`);
+      this.logZen(`DEAL C0 -> C1,C2,C3 | score:${Math.round(step.score)}`);
       this.renderAll();
       return true;
     }
@@ -2016,7 +2144,7 @@ class App {
       })
       .join('\n');
     const stock = this.engine.state.stock.map((card) => `${card.rank}${card.suit}`).join(' ');
-    return `seed:${this.engine.currentSeed}\n${cols}\nC-1: ${stock}`;
+    return `seed:${this.engine.currentSeed}\n${cols}\nC0: ${stock}`;
   }
 
   downloadDeckAnalysis() {
