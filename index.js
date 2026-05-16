@@ -12,12 +12,15 @@
 
 const SAVE_KEY = 'scorpionProgressV1';
 const LEVEL_RECORDS_KEY = 'scorpionLevelRecordsV1';
-const NEW_LEVEL_SOLVER_ATTEMPTS = 30;
+const PLAYED_GAMES_KEY = 'scorpionPlayedGamesV1';
+const PLAYABLE_LEVELS_KEY = 'scorpionPlayableLevelsV1';
+const LEVEL_PROGRESS_KEY = 'scorpionLevelProgressV1';
+const NEW_LEVEL_SOLVER_ATTEMPTS = 10000;
 
-// Add newly verified levels here. Each one defines the seed plus the global target to beat.
-const CURATED_LEVELS = [{"seed":1778580850582,"time":"5:00","moves":31},{"seed":1778861318939,"time":"0:29","moves":52},{"seed":1779088970273,"time":"0:38","moves":85},{"seed":1779140001748,"time":"00:36","moves":82},{"seed":1778690007669,"time":"00:41","moves":101},{"seed":1779298695545,"time":"00:43","moves":103},{"seed":1778729744528,"time":"00:29","moves":53},{"seed":1778847913357,"time":"00:29","moves":53},{"seed":1779488993749,"time":"00:28","moves":51},{"seed":1779560504060,"time":"00:27","moves":50},{"seed":1778905386765,"time":"00:28","moves":51},{"seed":1779590390504,"time":"00:38","moves":87},{"seed":1779037111344,"time":"00:38","moves":89},{"seed":1778912846826,"time":"00:31","moves":59},{"seed":1779069169116,"time":"00:27","moves":49},{"seed":1779491422382,"time":"00:29","moves":53},{"seed":1779145840448,"time":"00:29","moves":53},{"seed":1778945058548,"time":"00:52","moves":131},{"seed":1779218257148,"time":"00:29","moves":53},{"seed":1779545776074,"time":"00:28","moves":51},{"seed":1779283115047,"time":"00:34","moves":73},{"seed":1779494031682,"time":"00:29","moves":53},{"seed":1778727317593,"time":"00:28","moves":52},{"seed":1779005768722,"time":"01:33","moves":53},{"seed":1778666436606,"time":"00:28","moves":52},{"seed":1779172919658,"time":"00:28","moves":52},{"seed":1779452089479,"time":"00:29","moves":53},{"seed":1779386199405,"time":"00:28","moves":52},{"seed":1778865225293,"time":"00:28","moves":52}];
+// Playable levels are stored as seed numbers. Start empty and build progression per player.
+const CURATED_LEVELS = [];
 
-// Seeds confirmed impossible — add manually after observing console dead-end logs.
+// Seeds confirmed impossible.
 // Auto-play will never pick these seeds for new games.
 const BLACKLISTED_SEEDS = [];
 
@@ -806,6 +809,15 @@ class CanvasBoard {
           return;
         }
 
+        if (
+          !this.dragging &&
+          this.hovered &&
+          this.hovered.col === col &&
+          index >= this.hovered.index
+        ) {
+          return;
+        }
+
         const isTop = index === cards.length - 1;
         const cRect = this.getCardRect(col, index);
         let border = null;
@@ -816,6 +828,31 @@ class CanvasBoard {
 
         this.drawCard(card, cRect.x, cRect.y, isTop, border);
       });
+
+      if (!this.dragging && this.hovered && this.hovered.col === col) {
+        this.drawHoveredStackOverlay(col, this.hovered.index);
+      }
+    }
+  }
+
+  /** @param {number} col @param {number} fromIndex */
+  drawHoveredStackOverlay(col, fromIndex) {
+    const cards = this.engine.state.columns[col];
+    if (!cards || fromIndex < 0 || fromIndex >= cards.length) return;
+
+    const baseRect = this.getCardRect(col, fromIndex);
+    const step = this.getDynamicStackStep();
+    const previewStep = Math.max(step, this.isPortraitMobile ? 22 : 26);
+    const liftY = Math.max(8, Math.floor(this.cardH * 0.08));
+    const nudgeX = Math.max(6, Math.floor(this.cardW * 0.06));
+
+    for (let idx = fromIndex; idx < cards.length; idx += 1) {
+      const card = cards[idx];
+      const y = baseRect.y - liftY + (idx - fromIndex) * previewStep;
+      const x = baseRect.x + nudgeX;
+      const isTop = idx === cards.length - 1;
+      const border = idx === fromIndex ? 'rgba(255,255,255,0.98)' : null;
+      this.drawCard(card, x, y, isTop, border);
     }
   }
 
@@ -929,7 +966,10 @@ class App {
     this.engine = new GameEngine();
     const resumed = this.restoreProgress();
     if (!resumed) {
-      this.engine.startSingle();
+      this.ensurePlayableLevelsInitialized();
+      const levels = this.getPlayableLevels();
+      const firstSeed = levels[0] ?? this.pickNonBlacklistedSeed();
+      this.engine.startSingle(firstSeed);
     }
 
     this.canvas = document.getElementById('gameCanvas');
@@ -945,7 +985,7 @@ class App {
     this.levelsDialog = document.getElementById('levelsDialog');
     this.levelTabs = document.getElementById('levelsTabs');
     this.levelTabCuratedBtn = document.getElementById('levelTabCurated');
-    this.levelTabImpossibleBtn = document.getElementById('levelTabImpossible');
+    this.levelTabPlayedBtn = document.getElementById('levelTabPlayed');
     this.levelsList = document.getElementById('levelsList');
 
     this.welcomeDialog = document.getElementById('welcomeDialog');
@@ -960,8 +1000,6 @@ class App {
     this.saveScoreBtn = document.getElementById('saveScoreBtn');
     this.playSeedBtn = document.getElementById('playSeedBtn');
     this.clearScoresBtn = document.getElementById('clearScoresBtn');
-    this.winAnalysis = document.getElementById('winAnalysis');
-    this.downloadDeckBtn = document.getElementById('downloadDeckBtn');
 
     this.logoTrigger = document.getElementById('logoTrigger');
     this.zenPanel = document.getElementById('zenPanel');
@@ -983,7 +1021,7 @@ class App {
     this.lastLogoClickAt = 0;
     this.activeLevelTab = 'curated';
     this.levelRun = {
-      mode: 'infinity',
+      mode: 'curated',
     };
 
     this.zen = {
@@ -1010,6 +1048,7 @@ class App {
     };
 
     this.bindButtons();
+    this.ensurePlayableLevelsInitialized();
     this.registerServiceWorker();
     if (!resumed) {
       this.showWelcome();
@@ -1056,14 +1095,6 @@ class App {
   }
 
   bindButtons() {
-    document.getElementById('newGameBtn').addEventListener('click', () => {
-      if (this.zen.unlocked) {
-        this.zen.logs = [];
-        this.zenLog.textContent = 'Zen log';
-      }
-      this.startFreshGame();
-    });
-
     this.levelsBtn.addEventListener('click', () => {
       this.openLevelsDialog();
     });
@@ -1201,8 +1232,10 @@ class App {
     });
 
     document.getElementById('playNewDeckBtn').addEventListener('click', () => {
-      const nextSeed = this.pickNonBlacklistedSeed();
-      this.startFreshGame(nextSeed, this.winDialog, { mode: 'infinity' });
+      if (this.winDialog?.open) {
+        this.winDialog.close();
+      }
+      this.openLevelsDialog();
     });
 
     this.saveScoreBtn.addEventListener('click', () => {
@@ -1215,8 +1248,10 @@ class App {
     });
 
     document.getElementById('newAfterGameOverBtn').addEventListener('click', () => {
-      const nextSeed = this.pickNonBlacklistedSeed();
-      this.startFreshGame(nextSeed, this.gameOverDialog, { mode: 'infinity' });
+      if (this.gameOverDialog?.open) {
+        this.gameOverDialog.close();
+      }
+      this.openLevelsDialog();
     });
 
     this.playSeedBtn.addEventListener('click', () => {
@@ -1249,20 +1284,16 @@ class App {
       const button = target.closest('[data-level-seed], [data-level-mode]');
       if (!(button instanceof HTMLElement)) return;
 
-      if (button.dataset.levelMode === 'infinity') {
-        this.startFreshGame(null, this.levelsDialog, { mode: 'infinity' });
-        return;
-      }
-
-      if (button.dataset.levelMode === 'impossible') {
-        const impossibleSeed = Number(button.dataset.levelSeed);
-        if (!Number.isFinite(impossibleSeed)) return;
-        this.startFreshGame(impossibleSeed, this.levelsDialog, { mode: 'impossible' });
+      if (button.dataset.levelMode === 'played') {
+        const playedSeed = Number(button.dataset.levelSeed);
+        if (!Number.isFinite(playedSeed)) return;
+        this.startFreshGame(playedSeed, this.levelsDialog, { mode: 'played' });
         return;
       }
 
       const seed = Number(button.dataset.levelSeed);
       if (!Number.isFinite(seed)) return;
+      if (!this.isPlayableLevelUnlockedBySeed(seed)) return;
 
       this.startFreshGame(seed, this.levelsDialog, { mode: 'curated' });
     });
@@ -1273,7 +1304,7 @@ class App {
       const button = target.closest('[data-level-tab]');
       if (!(button instanceof HTMLElement)) return;
       const tab = button.dataset.levelTab;
-      if (tab !== 'curated' && tab !== 'impossible') return;
+      if (tab !== 'curated' && tab !== 'played') return;
       this.activeLevelTab = tab;
       this.renderLevels();
     });
@@ -1366,16 +1397,18 @@ class App {
       this.zenDragHandle.releasePointerCapture(event.pointerId);
     });
 
-    this.downloadDeckBtn.addEventListener('click', () => {
-      this.downloadDeckAnalysis();
-    });
-
     this.syncZenButtons();
 
   }
 
   toggleZenPanel() {
-    this.zen.unlocked = true;
+    if (!this.zen.unlocked) {
+      const input = window.prompt('Enter Zen password');
+      if (input !== 'critters') {
+        return;
+      }
+      this.zen.unlocked = true;
+    }
     this.zenPanel.hidden = !this.zenPanel.hidden;
   }
 
@@ -1404,6 +1437,9 @@ class App {
       const result = this.buildSeedSolution(seed);
       if (result.solved) {
         return seed;
+      } else {
+        // Add unsolvable seed to BLACKLISTED_SEEDS
+        this.appendBlacklistedSeed(seed);
       }
     }
 
@@ -1416,6 +1452,10 @@ class App {
 
   startFreshGame(seed = null, dialogToClose = null, runMeta = null) {
     this.stopZenAuto();
+    const carryForwardTotal = this.engine.gameState === 'won'
+      ? this.campaignScore
+      : this.campaignScore + this.engine.calculateSequentialScore();
+
     if (seed === null || seed === undefined) {
       this.engine.startSingle(this.pickNonBlacklistedSeed());
     } else {
@@ -1428,7 +1468,7 @@ class App {
       mode,
     };
 
-    this.campaignScore = 0;
+    this.campaignScore = carryForwardTotal;
     this.notifiedState = 'playing';
     this.hasSavedCurrentGame = false;
     this.resetZenRunState();
@@ -1453,6 +1493,128 @@ class App {
     localStorage.setItem(LEVEL_RECORDS_KEY, JSON.stringify(records));
   }
 
+  getPlayableLevels() {
+    try {
+      const raw = localStorage.getItem(PLAYABLE_LEVELS_KEY);
+      if (!raw) return CURATED_LEVELS.slice();
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return CURATED_LEVELS.slice();
+      return parsed.map((seed) => Number(seed)).filter((seed) => Number.isFinite(seed));
+    } catch {
+      return CURATED_LEVELS.slice();
+    }
+  }
+
+  savePlayableLevels(levels) {
+    localStorage.setItem(PLAYABLE_LEVELS_KEY, JSON.stringify(levels));
+  }
+
+  getLevelProgress() {
+    try {
+      const raw = localStorage.getItem(LEVEL_PROGRESS_KEY);
+      if (!raw) return { unlockedCount: 1 };
+      const parsed = JSON.parse(raw);
+      const unlockedCount = Number(parsed?.unlockedCount || 1);
+      return { unlockedCount: Math.max(1, unlockedCount) };
+    } catch {
+      return { unlockedCount: 1 };
+    }
+  }
+
+  saveLevelProgress(progress) {
+    localStorage.setItem(LEVEL_PROGRESS_KEY, JSON.stringify(progress));
+  }
+
+  isPlayableLevelUnlockedBySeed(seed) {
+    const levels = this.getPlayableLevels();
+    const index = levels.findIndex((levelSeed) => levelSeed === Number(seed));
+    if (index === -1) return false;
+    const progress = this.getLevelProgress();
+    return index < Math.max(1, progress.unlockedCount);
+  }
+
+  getPlayableSeeds(count = 1) {
+    const requested = Math.max(1, Math.min(50, Number(count) || 1));
+    const levels = this.getPlayableLevels();
+    const created = [];
+
+    for (let i = 0; i < requested; i += 1) {
+      const seed = this.pickNonBlacklistedSeed();
+      if (!levels.includes(seed)) {
+        levels.push(seed);
+        created.push(seed);
+      }
+    }
+
+    this.savePlayableLevels(levels);
+    this.syncCuratedFromStore();
+    this.renderLevels();
+    return created;
+  }
+
+  ensurePlayableLevelsInitialized() {
+    const levels = this.getPlayableLevels();
+    while (levels.length < 2) {
+      levels.push(this.pickNonBlacklistedSeed());
+    }
+    this.savePlayableLevels(levels);
+
+    const progress = this.getLevelProgress();
+    progress.unlockedCount = Math.max(1, Number(progress.unlockedCount || 1));
+    this.saveLevelProgress(progress);
+    this.syncCuratedFromStore();
+  }
+
+  syncCuratedFromStore() {
+    const levels = this.getPlayableLevels();
+    CURATED_LEVELS.length = 0;
+    CURATED_LEVELS.push(...levels);
+  }
+
+  getPlayedGames() {
+    try {
+      const raw = localStorage.getItem(PLAYED_GAMES_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  savePlayedGames(items) {
+    localStorage.setItem(PLAYED_GAMES_KEY, JSON.stringify(items.slice(0, 200)));
+  }
+
+  recordPlayedGame(status) {
+    const seed = Number(this.engine.currentSeed);
+    if (!Number.isFinite(seed)) return;
+
+    const elapsed = this.engine.elapsedSeconds();
+    const played = this.getPlayedGames();
+    const existing = played.find((entry) => Number(entry.seed) === seed);
+
+    if (!existing) {
+      played.push({
+        seed,
+        bestTime: elapsed,
+        bestMoves: this.engine.moves,
+        plays: 1,
+        lastStatus: status,
+        updatedAt: Date.now(),
+      });
+      this.savePlayedGames(played.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
+      return;
+    }
+
+    existing.bestTime = Math.min(Number(existing.bestTime || elapsed), elapsed);
+    existing.bestMoves = Math.min(Number(existing.bestMoves || this.engine.moves), this.engine.moves);
+    existing.plays = Number(existing.plays || 0) + 1;
+    existing.lastStatus = status;
+    existing.updatedAt = Date.now();
+    this.savePlayedGames(played.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)));
+  }
+
   appendBlacklistedSeed(seed) {
     const numericSeed = Number(seed);
     if (!Number.isFinite(numericSeed)) return false;
@@ -1461,27 +1623,28 @@ class App {
     return true;
   }
 
-  appendCuratedLevel(seed, time, moves) {
+  appendCuratedLevel(seed) {
     const numericSeed = Number(seed);
     if (!Number.isFinite(numericSeed)) return false;
-    if (CURATED_LEVELS.some((level) => level.seed === numericSeed)) return false;
-    CURATED_LEVELS.push({
-      seed: numericSeed,
-      time,
-      moves,
-    });
+    const levels = this.getPlayableLevels();
+    if (levels.includes(numericSeed)) return false;
+    levels.push(numericSeed);
+    this.savePlayableLevels(levels);
+    this.syncCuratedFromStore();
     return true;
   }
 
   exposeSeedListsToConsole() {
     window.scorpionSeedLists = {
       getBlacklisted: () => [...BLACKLISTED_SEEDS],
-      getCurated: () => CURATED_LEVELS.map((level) => ({ ...level })),
+      getCurated: () => this.getPlayableLevels(),
+      getPlayableSeeds: (count = 1) => this.getPlayableSeeds(count),
       exportJs: () => ({
         blacklisted: `const BLACKLISTED_SEEDS = [\n${BLACKLISTED_SEEDS.map((seed) => `  ${seed},`).join('\n')}\n];`,
-        curated: `const CURATED_LEVELS = [\n${CURATED_LEVELS.map((level) => `  { seed: ${level.seed}, time: '${level.time}', moves: ${level.moves} },`).join('\n')}\n];`,
+        curated: `const CURATED_LEVELS = [\n${this.getPlayableLevels().map((seed) => `  ${seed},`).join('\n')}\n];`,
       }),
     };
+    window.getPlayableSeeds = (count = 1) => this.getPlayableSeeds(count);
     window.solveSeed = (seed) => this.solveSeed(seed);
     window.getCurrentDeckSet = () => this.stateToRaw(this.engine.state);
     window.solveCurrentDeckSet = () => this.solveCurrentDeckSet();
@@ -1489,14 +1652,15 @@ class App {
   }
 
   recordCuratedLevelWin() {
-    const index = CURATED_LEVELS.findIndex((level) => level.seed === this.engine.currentSeed);
+    const levels = this.getPlayableLevels();
+    const index = levels.findIndex((seed) => seed === this.engine.currentSeed);
     if (index === -1) return;
 
     const records = this.getLevelRecords();
     const key = String(this.engine.currentSeed);
     const elapsedSeconds = this.engine.elapsedSeconds();
     const score = this.engine.calculateSequentialScore();
-    const existing = records[key] || { bestScore: 0, bestTime: null, wins: 0 };
+    const existing = records[key] || { bestScore: 0, bestTime: null, bestMoves: null, wins: 0 };
 
     records[key] = {
       bestScore: Math.max(existing.bestScore || 0, score),
@@ -1504,11 +1668,27 @@ class App {
         typeof existing.bestTime === 'number'
           ? Math.min(existing.bestTime, elapsedSeconds)
           : elapsedSeconds,
+      bestMoves:
+        typeof existing.bestMoves === 'number'
+          ? Math.min(existing.bestMoves, this.engine.moves)
+          : this.engine.moves,
       wins: (existing.wins || 0) + 1,
       levelNumber: index + 1,
     };
 
     this.saveLevelRecords(records);
+
+    const progress = this.getLevelProgress();
+    progress.unlockedCount = Math.max(progress.unlockedCount, index + 2);
+    this.saveLevelProgress(progress);
+
+    if (index === levels.length - 1) {
+      const nextSeed = this.pickNonBlacklistedSeed();
+      const appended = this.appendCuratedLevel(nextSeed);
+      if (appended) {
+        console.log(`[Playable] appended next seed:${nextSeed}`);
+      }
+    }
   }
 
   formatLevelTime(totalSeconds) {
@@ -1522,102 +1702,106 @@ class App {
 
   renderLevels() {
     if (!this.levelsList) return;
+    this.syncCuratedFromStore();
 
     if (this.levelTabCuratedBtn) {
       this.levelTabCuratedBtn.classList.toggle('active', this.activeLevelTab === 'curated');
       this.levelTabCuratedBtn.setAttribute('aria-selected', this.activeLevelTab === 'curated' ? 'true' : 'false');
     }
-    if (this.levelTabImpossibleBtn) {
-      this.levelTabImpossibleBtn.classList.toggle('active', this.activeLevelTab === 'impossible');
-      this.levelTabImpossibleBtn.setAttribute('aria-selected', this.activeLevelTab === 'impossible' ? 'true' : 'false');
+    if (this.levelTabPlayedBtn) {
+      this.levelTabPlayedBtn.classList.toggle('active', this.activeLevelTab === 'played');
+      this.levelTabPlayedBtn.setAttribute('aria-selected', this.activeLevelTab === 'played' ? 'true' : 'false');
     }
 
     this.levelsList.innerHTML = '';
 
-    if (this.activeLevelTab === 'impossible') {
-      if (BLACKLISTED_SEEDS.length === 0) {
+    if (this.activeLevelTab === 'played') {
+      const played = this.getPlayedGames();
+      if (played.length === 0) {
         const empty = document.createElement('p');
         empty.className = 'level-empty';
-        empty.textContent = 'Add impossible seeds to BLACKLISTED_SEEDS in index.js.';
+        empty.textContent = 'No played games yet. Finish a game to populate this list.';
         this.levelsList.appendChild(empty);
         return;
       }
 
-      BLACKLISTED_SEEDS.forEach((seed, index) => {
+      played.forEach((entry, index) => {
         const button = document.createElement('button');
         button.type = 'button';
-        button.className = 'level-tile impossible';
-        button.dataset.levelMode = 'impossible';
-        button.dataset.levelSeed = String(seed);
+        button.className = 'level-tile played';
+        button.dataset.levelMode = 'played';
+        button.dataset.levelSeed = String(entry.seed);
 
         const number = document.createElement('span');
         number.className = 'level-number';
-        number.textContent = `!${index + 1}`;
+        number.textContent = `P${index + 1}`;
 
-        const label = document.createElement('span');
-        label.className = 'level-time';
-        label.textContent = 'Impossible Deck';
+        const time = document.createElement('span');
+        time.className = 'level-time';
+        time.textContent = `Best ${this.formatLevelTime(Number(entry.bestTime || 0))}`;
+
+        const moves = document.createElement('span');
+        moves.className = 'level-time';
+        moves.textContent = `${Number(entry.bestMoves || 0)} moves`;
 
         const seedLabel = document.createElement('span');
         seedLabel.className = 'level-time';
-        seedLabel.textContent = `seed ${seed}`;
+        seedLabel.textContent = `seed ${entry.seed}`;
 
-        button.append(number, label, seedLabel);
+        button.append(number, time, moves, seedLabel);
         this.levelsList.appendChild(button);
       });
 
       return;
     }
 
-    const infinityTile = document.createElement('button');
-    infinityTile.type = 'button';
-    infinityTile.className = 'level-tile infinity';
-    infinityTile.dataset.levelMode = 'infinity';
-
-    const infinityNumber = document.createElement('span');
-    infinityNumber.className = 'level-number';
-    infinityNumber.textContent = '∞';
-    const infinityLabel = document.createElement('span');
-    infinityLabel.className = 'level-time';
-    infinityLabel.textContent = 'Random Game';
-
-    infinityTile.append(infinityNumber, infinityLabel);
-    this.levelsList.appendChild(infinityTile);
-
     if (CURATED_LEVELS.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'level-empty';
-      empty.textContent = 'Add verified levels to CURATED_LEVELS in index.js.';
+      empty.textContent = 'No playable levels yet. Use window.getPlayableSeeds(n) to create some.';
       this.levelsList.appendChild(empty);
       return;
     }
 
     const records = this.getLevelRecords();
+    const progress = this.getLevelProgress();
+    const unlockedCount = Math.max(1, progress.unlockedCount);
 
-    CURATED_LEVELS.forEach((level, index) => {
-      const record = records[String(level.seed)] || null;
+    CURATED_LEVELS.forEach((seed, index) => {
+      const record = records[String(seed)] || null;
+      const unlocked = index < unlockedCount;
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'level-tile';
-      button.dataset.levelSeed = String(level.seed);
+      if (!unlocked) {
+        button.classList.add('played');
+        button.disabled = true;
+      }
+      button.dataset.levelSeed = String(seed);
 
       const number = document.createElement('span');
       number.className = 'level-number';
       number.textContent = String(index + 1);
 
-      const time = document.createElement('span');
-      time.className = 'level-time';
-      time.textContent = level.time;
+      const state = document.createElement('span');
+      state.className = 'level-time';
+      state.textContent = unlocked ? 'Unlocked' : 'Locked';
 
       const moves = document.createElement('span');
       moves.className = 'level-time';
-      moves.textContent = `${level.moves} moves`;
+      moves.textContent =
+        typeof record?.bestMoves === 'number' ? `${record.bestMoves} moves` : 'No record';
+
+      const time = document.createElement('span');
+      time.className = 'level-time';
+      time.textContent =
+        typeof record?.bestTime === 'number' ? this.formatLevelTime(record.bestTime) : 'No time';
 
       if (record?.bestTime) {
         button.title = `Your best: ${this.formatLevelTime(record.bestTime)}`;
       }
 
-      button.append(number, time, moves);
+      button.append(number, state, moves, time);
       this.levelsList.appendChild(button);
     });
   }
@@ -2364,25 +2548,19 @@ class App {
 
     if (this.engine.gameState === 'won') {
       this.campaignScore += currentScore;
+      this.recordPlayedGame('won');
       if (this.zen.running) {
         this.zen.lastWinByAuto = true;
       }
-      const autoSummary = this.zen.lastWinByAuto
-        ? ` | sim:${this.formatLevelTime(this.engine.elapsedSeconds())}, ${this.engine.moves} moves`
-        : '';
       this.recordCuratedLevelWin();
       if (this.zen.lastWinByAuto) {
-        const elapsed = this.engine.elapsedSeconds();
-        const mm = String(Math.floor(elapsed / 60)).padStart(2, '0');
-        const ss = String(elapsed % 60).padStart(2, '0');
-        const appendedCurated = this.appendCuratedLevel(this.engine.currentSeed, `${mm}:${ss}`, this.engine.moves);
+        const appendedCurated = this.appendCuratedLevel(this.engine.currentSeed);
         if (appendedCurated) {
-          console.log(`[Zen list] appended CURATED_LEVELS seed:${this.engine.currentSeed} time:${mm}:${ss} moves:${this.engine.moves}`);
+          console.log(`[Zen list] appended CURATED_LEVELS seed:${this.engine.currentSeed}`);
         }
       }
       this.renderLevels();
-      this.winSummary.textContent = `Deck score: ${currentScore} pts. Total score: ${this.campaignScore} pts.`;
-      this.winAnalysis.textContent = `seed:${this.engine.currentSeed} | pilot:${this.zen.lastWinByAuto ? 'win' : 'not used'}${autoSummary} | hidden:${this.engine.countFaceDownTableau() === 0 ? 'clear' : 'remaining'}`;
+      this.winSummary.textContent = `Status: Won. Current score: ${this.campaignScore} pts.`;
 
       if (this.zen.running && this.zenAutoNewGameChk?.checked) {
         const nextSeed = this.pickNonBlacklistedSeed();
@@ -2404,6 +2582,8 @@ class App {
     }
 
     if (this.engine.gameState === 'stuck') {
+      this.recordPlayedGame('stuck');
+      this.renderLevels();
       this.gameOverSummary.textContent = `Final score: ${this.lastScoreAtEnd}. Save your high score!`;
       this.seedInput.value = String(this.engine.currentSeed);
       this.saveScoreBtn.disabled = this.hasSavedCurrentGame;
@@ -2417,7 +2597,7 @@ class App {
     this.engine.syncGameState();
 
     const gameScore = this.engine.calculateSequentialScore();
-    this.scoreLabel.textContent = `${gameScore}`;
+    this.scoreLabel.textContent = `${this.campaignScore + gameScore}`;
     this.movesLabel.textContent = String(this.engine.moves);
 
     const sec = this.engine.elapsedSeconds();

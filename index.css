@@ -376,6 +376,11 @@ body {
   border-color: rgba(139, 63, 45, 0.2);
 }
 
+.level-tile.played {
+  background: linear-gradient(180deg, #d9e9ff 0%, #edf4ff 100%);
+  border-color: rgba(49, 91, 155, 0.24);
+}
+
 @media (max-width: 680px) {
   .levels-list {
     grid-template-columns: repeat(3, minmax(0, 1fr));

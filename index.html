@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="app-build-version" content="20260514.2" />
+    <meta name="app-build-version" content="20260516.2" />
     <title>Scorpion Critters Solitaire</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,14 +11,13 @@
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700;800&family=Nunito:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="index.css?v=20260514.2" />
+    <link rel="stylesheet" href="index.css?v=20260516.2" />
   </head>
   <body>
     <div class="app-shell">
       <header class="top-menu">
         <h1><button id="logoTrigger" class="logo-trigger" aria-label="Secret Zen Mode">🦂</button> Scorpion Critters Solitaire</h1>
         <div class="menu-buttons">
-          <button id="newGameBtn" class="btn warm">New Game</button>
           <button id="levelsBtn" class="btn mint">Levels</button>
           <button id="resetBtn" class="btn">Reset Board</button>
           <button id="undoBtn" class="btn">Undo</button>
@@ -75,14 +74,10 @@
         completing full runs, and creating free spaces. Smart play earns much more than quick moves.
       </p>
       <p>
-        Open <strong>Levels</strong> to play curated solvable decks. Everyone can take on the same level,
-        compare scores and times, and challenge each other to find the cleanest win.
+        Open <strong>Levels</strong> to play solvable decks in order. Beat each unlocked level to open the next one,
+        set your own best time and moves, and keep climbing.
       </p>
-      <p>
-        Want something fresh? The <strong>∞</strong> level gives you a brand new random deck every time,
-        so you can practice freely between shared level challenges.
-      </p>
-      <p class="welcome-cta">Pick a level to compete, or dive into infinity and chase a new personal best.</p>
+      <p class="welcome-cta">Pick your unlocked level and push for a cleaner record every run.</p>
       <div class="dialog-actions">
         <button id="welcomeLevelsBtn" type="button" class="btn mint">Play Levels</button>
         <form method="dialog">
@@ -103,10 +98,10 @@
       <h2>Levels</h2>
       <div id="levelsTabs" class="levels-tabs" role="tablist" aria-label="Level groups">
         <button id="levelTabCurated" type="button" class="btn levels-tab active" data-level-tab="curated" role="tab" aria-selected="true">
-          Solvable Levels
+          Playable Levels
         </button>
-        <button id="levelTabImpossible" type="button" class="btn levels-tab" data-level-tab="impossible" role="tab" aria-selected="false">
-          Impossible Levels
+        <button id="levelTabPlayed" type="button" class="btn levels-tab" data-level-tab="played" role="tab" aria-selected="false">
+          Played
         </button>
       </div>
       <div id="levelsList" class="levels-list"></div>
@@ -118,10 +113,6 @@
     <dialog id="winDialog" class="hint-dialog">
       <h2>You Won 🎉</h2>
       <p id="winSummary">Great play.</p>
-      <p id="winAnalysis">Analysis pending.</p>
-      <div class="dialog-actions">
-        <button id="downloadDeckBtn" class="btn">Download Solvable Deck</button>
-      </div>
       <form method="dialog" class="dialog-actions">
         <button id="playNewDeckBtn" class="btn mint" value="play">Play New Deck</button>
         <button class="btn" value="close">Close</button>
@@ -151,6 +142,6 @@
       <ol id="highScoreList" class="high-score-list"></ol>
     </dialog>
 
-    <script src="index.js?v=20260514.2"></script>
+    <script src="index.js?v=20260516.2"></script>
   </body>
 </html>
