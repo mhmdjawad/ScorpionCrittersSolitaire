@@ -15,10 +15,11 @@ const LEVEL_RECORDS_KEY = 'scorpionLevelRecordsV1';
 const PLAYED_GAMES_KEY = 'scorpionPlayedGamesV1';
 const PLAYABLE_LEVELS_KEY = 'scorpionPlayableLevelsV1';
 const LEVEL_PROGRESS_KEY = 'scorpionLevelProgressV1';
+const BUILD_VERSION_KEY = 'scorpionBuildVersionV1';
 const NEW_LEVEL_SOLVER_ATTEMPTS = 10000;
 
 // Playable levels are stored as seed numbers. Start empty and build progression per player.
-const CURATED_LEVELS = [];
+const CURATED_LEVELS = [1779527854470, 1779835606928, 1779008718619, 1779049532341, 1779455479256, 1779766978104, 1779140770030, 1779569185155, 1779271112712, 1779121176396];
 
 // Seeds confirmed impossible.
 // Auto-play will never pick these seeds for new games.
@@ -962,9 +963,11 @@ class App {
     this.campaignScore = 0;
     this.lastScoreAtEnd = 0;
     this.notifiedState = 'playing';
+    this.didBuildReset = false;
 
     this.engine = new GameEngine();
-    const resumed = this.restoreProgress();
+    this.didBuildReset = this.resetForBuildVersionChange();
+    const resumed = !this.didBuildReset && this.restoreProgress();
     if (!resumed) {
       this.ensurePlayableLevelsInitialized();
       const levels = this.getPlayableLevels();
@@ -1050,7 +1053,11 @@ class App {
     this.bindButtons();
     this.ensurePlayableLevelsInitialized();
     this.registerServiceWorker();
-    if (!resumed) {
+    if (this.didBuildReset) {
+      // After a build migration reset, open Levels directly as the main entry point.
+      this.activeLevelTab = 'curated';
+      this.openLevelsDialog();
+    } else if (!resumed) {
       this.showWelcome();
     }
     this.renderLevels();
@@ -1478,6 +1485,31 @@ class App {
     this.renderAll();
   }
 
+  resetForBuildVersionChange() {
+    try {
+      const currentBuild =
+        document.querySelector('meta[name="app-build-version"]')?.getAttribute('content') || 'dev';
+      const storedBuild = localStorage.getItem(BUILD_VERSION_KEY);
+      if (storedBuild === currentBuild) {
+        return false;
+      }
+
+      const toDelete = [];
+      for (let i = 0; i < localStorage.length; i += 1) {
+        const key = localStorage.key(i);
+        if (!key) continue;
+        if (key.startsWith('scorpion')) {
+          toDelete.push(key);
+        }
+      }
+      toDelete.forEach((key) => localStorage.removeItem(key));
+      localStorage.setItem(BUILD_VERSION_KEY, currentBuild);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   getLevelRecords() {
     try {
       const raw = localStorage.getItem(LEVEL_RECORDS_KEY);
@@ -1554,10 +1586,26 @@ class App {
 
   ensurePlayableLevelsInitialized() {
     const levels = this.getPlayableLevels();
-    while (levels.length < 2) {
-      levels.push(this.pickNonBlacklistedSeed());
+    const baseSeeds = CURATED_LEVELS.slice();
+
+    if (levels.length === 0) {
+      this.savePlayableLevels(baseSeeds);
+      const progress = { unlockedCount: 1 };
+      this.saveLevelProgress(progress);
+      this.syncCuratedFromStore();
+      return;
     }
-    this.savePlayableLevels(levels);
+
+    let changed = false;
+    for (const seed of baseSeeds) {
+      if (!levels.includes(seed)) {
+        levels.push(seed);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.savePlayableLevels(levels);
+    }
 
     const progress = this.getLevelProgress();
     progress.unlockedCount = Math.max(1, Number(progress.unlockedCount || 1));
