@@ -100,9 +100,15 @@ class ScorpionRules {
     const card = source[fromIndex];
     if (!card.faceUp) return false;
 
+    // Disallow moving a King from the top of a root column to any other root column
+    if (card.rank === 13 && fromIndex === 0) {
+      // Only allow moving to an empty column if it's not a root-to-root move
+      // (i.e., only if either fromCol or toCol is not a root column)
+      // In Scorpion, all columns are root columns, so block all root-to-root King moves
+      return false;
+    }
+
     if (target.length === 0) {
-      // Prevent no-op column swaps: a root King stack moved to an empty column is equivalent state.
-      if (card.rank === 13 && fromIndex === 0) return false;
       return card.rank === 13;
     }
 
@@ -1005,6 +1011,7 @@ class App {
     this.clearScoresBtn = document.getElementById('clearScoresBtn');
 
     this.logoTrigger = document.getElementById('logoTrigger');
+    this.scorpionHelperIndicator = document.getElementById('scorpionHelperIndicator');
     this.zenPanel = document.getElementById('zenPanel');
     this.zenAutoBtn = document.getElementById('zenAutoBtn');
     this.zenPauseBtn = document.getElementById('zenPauseBtn');
@@ -1049,6 +1056,8 @@ class App {
       dx: 0,
       dy: 0,
     };
+    this.helperSolveCacheSig = null;
+    this.helperHasStarMove = false;
 
     this.bindButtons();
     this.ensurePlayableLevelsInitialized();
@@ -1087,17 +1096,16 @@ class App {
   scoreMoveHeuristic(move) {
     const beforeScore = this.engine.score;
     const beforeMoves = this.engine.moves;
-    
-    // Try the move
+
+    // Prevent moves from incrementing during hint calculation
+    const originalMoves = this.engine.moves;
     const moved = this.engine.moveStack(move.fromCol, move.fromIndex, move.toCol);
     if (!moved) return 0;
-    
-    // Calculate the score delta from this move
+
     const scoreDelta = this.engine.score - beforeScore;
-    
-    // Undo the move
     this.engine.undo();
-    
+    this.engine.moves = originalMoves;
+
     return scoreDelta;
   }
 
@@ -1134,6 +1142,9 @@ class App {
     });
 
     document.getElementById('hintBtn').addEventListener('click', () => {
+      // Always add exactly 10 moves for using the hint button (but only once per click)
+      this.engine.moves += 10;
+
       const moves = ScorpionRules.listMoves(this.engine.state.columns);
       const hasExtraSet = this.engine.state.stock.length >= 3;
       if (moves.length === 0 && !hasExtraSet) {
@@ -1181,6 +1192,7 @@ class App {
           applyBtn.style.cssText = 'padding: 0.25rem 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;';
           applyBtn.addEventListener('click', () => {
             this.engine.moveStack(m.fromCol, m.fromIndex, m.toCol);
+            // Only add 1 move for using a suggested move (moveStack already adds 1)
             this.notifiedState = 'playing';
             this.hintDialog.close();
             this.renderAll();
@@ -1239,6 +1251,31 @@ class App {
     });
 
     document.getElementById('playNewDeckBtn').addEventListener('click', () => {
+      if (this.levelRun?.mode === 'curated') {
+        const nextSeed = this.getNextPlayableSeedFromCurrent();
+        if (Number.isFinite(nextSeed)) {
+          this.startFreshGame(nextSeed, this.winDialog, { mode: 'curated' });
+          return;
+        }
+      }
+
+      if (this.winDialog?.open) {
+        this.winDialog.close();
+      }
+      this.openLevelsDialog();
+    });
+
+    document.getElementById('replayLevelBtn')?.addEventListener('click', () => {
+      const currentSeed = Number(this.engine.currentSeed);
+      if (!Number.isFinite(currentSeed)) return;
+
+      const replayMode = this.levelRun?.mode === 'curated' || this.levelRun?.mode === 'played'
+        ? this.levelRun.mode
+        : 'custom';
+      this.startFreshGame(currentSeed, this.winDialog, { mode: replayMode });
+    });
+
+    document.getElementById('winMenuBtn')?.addEventListener('click', () => {
       if (this.winDialog?.open) {
         this.winDialog.close();
       }
@@ -1405,7 +1442,35 @@ class App {
     });
 
     this.syncZenButtons();
+    this.updateScorpionHelperIndicator();
 
+  }
+
+  updateScorpionHelperIndicator() {
+    if (!this.scorpionHelperIndicator) return;
+
+    const moveCount = ScorpionRules.listMoves(this.engine.state.columns).length;
+    const canUseExtraDeck = this.engine.state.stock.length >= 3;
+    const totalValidActions = moveCount + (canUseExtraDeck ? 1 : 0);
+
+    const stateSig = this.stateSignature(this.engine.state);
+    if (this.helperSolveCacheSig !== stateSig) {
+      const currentSolve = this.buildSolutionFromState(this.engine.state);
+      this.helperSolveCacheSig = stateSig;
+      this.helperHasStarMove = Boolean(
+        currentSolve.solved
+        && Array.isArray(currentSolve.steps)
+        && currentSolve.steps.length > 0,
+      );
+    }
+
+    const hasWinningPath = this.engine.gameState === 'won' || this.helperHasStarMove;
+
+    const isUnsolvable = !hasWinningPath;
+    this.scorpionHelperIndicator.classList.toggle('is-unstable', isUnsolvable);
+    this.scorpionHelperIndicator.classList.toggle('is-stable', !isUnsolvable);
+    this.scorpionHelperIndicator.textContent = totalValidActions > 99 ? '99+' : String(totalValidActions);
+    this.scorpionHelperIndicator.title = `${hasWinningPath ? 'Winnable path detected' : 'No known winning path'} | Valid actions: ${totalValidActions} (${moveCount} moves${canUseExtraDeck ? ' + extra deck' : ''})`;
   }
 
   toggleZenPanel() {
@@ -1483,6 +1548,16 @@ class App {
       dialogToClose.close();
     }
     this.renderAll();
+  }
+
+  getNextPlayableSeedFromCurrent() {
+    const levels = this.getPlayableLevels();
+    const current = Number(this.engine.currentSeed);
+    const currentIndex = levels.findIndex((seed) => Number(seed) === current);
+    if (currentIndex === -1) return null;
+
+    const nextSeed = levels[currentIndex + 1];
+    return Number.isFinite(Number(nextSeed)) ? Number(nextSeed) : null;
   }
 
   resetForBuildVersionChange() {
@@ -2643,6 +2718,7 @@ class App {
 
   renderStatus() {
     this.engine.syncGameState();
+    this.updateScorpionHelperIndicator();
 
     const gameScore = this.engine.calculateSequentialScore();
     this.scoreLabel.textContent = `${this.campaignScore + gameScore}`;

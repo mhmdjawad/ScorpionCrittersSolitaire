@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="app-build-version" content="20260517.1" />
+    <meta name="app-build-version" content="20260517.2" />
     <title>Scorpion Critters Solitaire</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,12 +11,16 @@
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700;800&family=Nunito:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="index.css?v=20260517.1" />
+    <link rel="stylesheet" href="index.css?v=20260517.2" />
   </head>
   <body>
     <div class="app-shell">
       <header class="top-menu">
-        <h1><button id="logoTrigger" class="logo-trigger" aria-label="Secret Zen Mode">🦂</button> Scorpion Critters Solitaire</h1>
+        <h1 class="brand-title">
+          <button id="logoTrigger" class="logo-trigger" aria-label="Secret Zen Mode">🦂</button>
+          <span id="scorpionHelperIndicator" class="scorpion-helper-indicator" aria-hidden="true" title="Helper status"></span>
+          <span>Scorpion Critters Solitaire</span>
+        </h1>
         <div class="menu-buttons">
           <button id="levelsBtn" class="btn mint">Levels</button>
           <button id="resetBtn" class="btn">Reset Board</button>
@@ -114,8 +118,9 @@
       <h2>You Won 🎉</h2>
       <p id="winSummary">Great play.</p>
       <form method="dialog" class="dialog-actions">
-        <button id="playNewDeckBtn" class="btn mint" value="play">Play New Deck</button>
-        <button class="btn" value="close">Close</button>
+        <button id="playNewDeckBtn" class="btn mint" value="play">Start Next Level</button>
+        <button id="replayLevelBtn" class="btn" value="replay">Replay This Level</button>
+        <button id="winMenuBtn" class="btn warm" value="menu">Menu</button>
       </form>
     </dialog>
 
@@ -142,6 +147,6 @@
       <ol id="highScoreList" class="high-score-list"></ol>
     </dialog>
 
-    <script src="index.js?v=20260517.1"></script>
+    <script src="index.js?v=20260517.2"></script>
   </body>
 </html>

@@ -57,12 +57,48 @@ body {
   line-height: 1;
 }
 
+.brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .logo-trigger {
   border: 0;
   background: transparent;
   font-size: 1.3em;
   cursor: pointer;
   padding: 0 6px 0 0;
+}
+
+.scorpion-helper-indicator {
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #4cc96b;
+  box-shadow: 0 0 0 3px rgba(76, 201, 107, 0.16);
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #0f3d1f;
+  line-height: 1;
+}
+
+.scorpion-helper-indicator.is-unstable {
+  background: #e35a5a;
+  box-shadow: 0 0 0 3px rgba(227, 90, 90, 0.16);
+  color: #ffffff;
+}
+
+.scorpion-helper-indicator.is-stable {
+  background: #4cc96b;
+  box-shadow: 0 0 0 3px rgba(76, 201, 107, 0.16);
 }
 
 .menu-buttons {
