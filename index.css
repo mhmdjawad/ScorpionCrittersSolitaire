@@ -90,15 +90,40 @@ body {
   line-height: 1;
 }
 
-.scorpion-helper-indicator.is-unstable {
+.scorpion-helper-indicator.suit-r {
   background: #e35a5a;
   box-shadow: 0 0 0 3px rgba(227, 90, 90, 0.16);
   color: #ffffff;
 }
 
-.scorpion-helper-indicator.is-stable {
+.scorpion-helper-indicator.suit-g {
   background: #4cc96b;
   box-shadow: 0 0 0 3px rgba(76, 201, 107, 0.16);
+  color: #0f3d1f;
+}
+
+.scorpion-helper-indicator.suit-b {
+  background: #4f86e8;
+  box-shadow: 0 0 0 3px rgba(79, 134, 232, 0.18);
+  color: #ffffff;
+}
+
+.scorpion-helper-indicator.suit-y {
+  background: #e1be45;
+  box-shadow: 0 0 0 3px rgba(225, 190, 69, 0.2);
+  color: #34260a;
+}
+
+.scorpion-helper-indicator.suit-extra {
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.32);
+  color: #1f2937;
+}
+
+.scorpion-helper-indicator.no-win-path {
+  background: #1b1b1b;
+  box-shadow: 0 0 0 3px rgba(27, 27, 27, 0.24);
+  color: #ffffff;
 }
 
 .menu-buttons {

@@ -1058,6 +1058,8 @@ class App {
     };
     this.helperSolveCacheSig = null;
     this.helperHasStarMove = false;
+    this.helperBestSuit = null;
+    this.helperBestCard = null;
 
     this.bindButtons();
     this.ensurePlayableLevelsInitialized();
@@ -1456,21 +1458,60 @@ class App {
     const stateSig = this.stateSignature(this.engine.state);
     if (this.helperSolveCacheSig !== stateSig) {
       const currentSolve = this.buildSolutionFromState(this.engine.state);
+      const recommendedStep = currentSolve.solved && Array.isArray(currentSolve.steps) && currentSolve.steps.length > 0
+        ? currentSolve.steps[0]
+        : null;
+
+      let bestSuit = null;
+      let bestCard = null;
+      if (recommendedStep?.type === 'move') {
+        bestCard = this.engine.state.columns[recommendedStep.fromCol]?.[recommendedStep.fromIndex] || null;
+        bestSuit = bestCard?.suit || null;
+      } else if (recommendedStep?.type === 'deal') {
+        bestSuit = 'EXTRA';
+      }
+
       this.helperSolveCacheSig = stateSig;
-      this.helperHasStarMove = Boolean(
-        currentSolve.solved
-        && Array.isArray(currentSolve.steps)
-        && currentSolve.steps.length > 0,
-      );
+      this.helperHasStarMove = Boolean(recommendedStep);
+      this.helperBestSuit = bestSuit;
+      this.helperBestCard = bestCard;
     }
 
     const hasWinningPath = this.engine.gameState === 'won' || this.helperHasStarMove;
+    const indicatorClasses = ['is-unstable', 'is-stable', 'suit-r', 'suit-g', 'suit-b', 'suit-y', 'suit-extra', 'no-win-path'];
+    this.scorpionHelperIndicator.classList.remove(...indicatorClasses);
 
-    const isUnsolvable = !hasWinningPath;
-    this.scorpionHelperIndicator.classList.toggle('is-unstable', isUnsolvable);
-    this.scorpionHelperIndicator.classList.toggle('is-stable', !isUnsolvable);
-    this.scorpionHelperIndicator.textContent = totalValidActions > 99 ? '99+' : String(totalValidActions);
-    this.scorpionHelperIndicator.title = `${hasWinningPath ? 'Winnable path detected' : 'No known winning path'} | Valid actions: ${totalValidActions} (${moveCount} moves${canUseExtraDeck ? ' + extra deck' : ''})`;
+    if (!hasWinningPath) {
+      this.scorpionHelperIndicator.classList.add('no-win-path');
+    } else {
+      const suit = this.helperBestSuit;
+      if (suit === 'R') {
+        this.scorpionHelperIndicator.classList.add('suit-r');
+      } else if (suit === 'G') {
+        this.scorpionHelperIndicator.classList.add('suit-g');
+      } else if (suit === 'B') {
+        this.scorpionHelperIndicator.classList.add('suit-b');
+      } else if (suit === 'Y') {
+        this.scorpionHelperIndicator.classList.add('suit-y');
+      } else if (suit === 'EXTRA') {
+        this.scorpionHelperIndicator.classList.add('suit-extra');
+      } else {
+        this.scorpionHelperIndicator.classList.add('suit-g');
+      }
+    }
+
+    // Determine badge text: card text, or "1" for game over / extra deck
+    let badgeText = '1';
+    if (this.engine.gameState === 'won' || this.engine.gameState === 'stuck') {
+      badgeText = '1';
+    } else if (this.helperBestSuit === 'EXTRA') {
+      badgeText = '1';
+    } else if (this.helperBestCard) {
+      badgeText = ScorpionRules.cardText(this.helperBestCard);
+    }
+    this.scorpionHelperIndicator.textContent = badgeText;
+
+    this.scorpionHelperIndicator.title = `${hasWinningPath ? `Best move suit: ${this.helperBestSuit || 'N/A'}` : 'No known winning path'} | Valid actions: ${totalValidActions} (${moveCount} moves${canUseExtraDeck ? ' + extra deck' : ''})`;
   }
 
   toggleZenPanel() {
