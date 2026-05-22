@@ -1,6 +1,6 @@
 <?php
 
-$version = "2026-05-22-2";
+$version = time();
 ?>
 <!doctype html>
 <html lang="en">
@@ -15,7 +15,7 @@ $version = "2026-05-22-2";
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700;800&family=Nunito:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="index.css?<?=$version?>" />
+    <link rel="stylesheet" href="index.css?v<?=$version?>" />
   </head>
   <body>
     <div class="app-shell">
@@ -184,6 +184,6 @@ $version = "2026-05-22-2";
       <ol id="highScoreList" class="high-score-list"></ol>
     </dialog>
 
-    <script src="index.js?<?=$version?>"></script>
+    <script src="index.js?v<?=$version?>"></script>
   </body>
 </html>

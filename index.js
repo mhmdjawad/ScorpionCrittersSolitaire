@@ -1350,7 +1350,7 @@ class App {
     });
 
     this.zenCloseBtn?.addEventListener('click', () => {
-      this.hideZenPanel();
+      this.zenPanel.hidden = true;
     });
 
     this.zenLogClearBtn?.addEventListener('click', () => {
@@ -2423,6 +2423,15 @@ class App {
     this.zenAutoBtn.textContent = this.zen.running ? 'Stop Auto' : 'Auto Play';
   }
 
+  toggleZenAuto() {
+    if (this.zen.running) {
+      this.stopZenAuto();
+      return;
+    }
+
+    this.startZenAuto();
+  }
+
   startZenAuto() {
     this.zen.running = true;
     this.syncZenButtons();
@@ -2571,8 +2580,21 @@ class App {
     }
   }
 
-  registerServiceWorker() {
+  async registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
+
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map((cacheKey) => caches.delete(cacheKey)));
+      }
+    } catch {
+      // Ignore cleanup failures and continue with the current build.
+    }
+
     const buildVersion = document.querySelector('meta[name="app-build-version"]')?.getAttribute('content') || 'dev';
     navigator.serviceWorker.register(`./sw.js?build=${encodeURIComponent(buildVersion)}`).catch(() => {
       // Ignore SW registration failures.
