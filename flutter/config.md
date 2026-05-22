@@ -1,5 +1,5 @@
-APPNAME=JustSimpleBlocks
-APPID=com.pdemia.justsimpleblocks
+APPNAME=Scorpion Critters Solitaire
+APPID=com.pdemia.scorpioncritterssolitaire
 LOGO=./scs.png
 WEBVIEW=https://pdemia.com/scs/
 

@@ -4,7 +4,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 const String kWebviewUrl = 'https://pdemia.com/scs/';
-const String kAppTitle = 'JustSimpleBlocks';
+const String kAppTitle = 'Scorpion Critters Solitaire';
 const bool kEnableZoom = false;
 const bool kEnableDebugLogs = false;
 const bool kShowLoadingBar = true;

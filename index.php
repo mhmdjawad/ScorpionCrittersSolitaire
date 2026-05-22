@@ -144,7 +144,7 @@ $version = "2026-05-22-2";
       <section class="apk-section" aria-labelledby="apkSectionTitle">
         <h3 id="apkSectionTitle">Get the Android APK</h3>
         <p>Install the latest mobile build directly from the official download link.</p>
-        <a class="apk-link" href="https://pdemia.com/scs/app/app.apk" target="_blank" rel="noopener noreferrer">Download APK</a>
+        <a class="apk-link" href="https://pdemia.com/scs/app/scorpioncritterssolitaire.apk" target="_blank" rel="noopener noreferrer">Download APK</a>
       </section>
       <form method="dialog" class="dialog-actions">
         <button class="btn warm">Close</button>
