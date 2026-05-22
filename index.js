@@ -871,10 +871,13 @@ class CanvasBoard {
     const startX = this.pointer.x - this.dragging.offsetX;
     const startY = this.pointer.y - this.dragging.offsetY;
 
+    // Use green if a valid drop target exists, else red
+    const highlight = this.dropCol !== null ? 'rgba(76, 201, 107, 0.95)' : 'rgba(223, 75, 75, 0.95)';
+
     this.dragging.stack.forEach((card, idx) => {
       const y = startY + idx * step;
       const isTop = idx === this.dragging.stack.length - 1;
-      const border = idx === 0 ? 'rgba(223, 75, 75, 0.95)' : null;
+      const border = idx === 0 ? highlight : null;
       this.drawCard(card, startX, y, isTop, border);
     });
   }
@@ -1526,14 +1529,15 @@ class App {
       }
     }
 
-    // Determine badge text: card text, or "1" for game over / extra deck
-    let badgeText = '1';
-    if (this.engine.gameState === 'won' || this.engine.gameState === 'stuck') {
-      badgeText = '1';
-    } else if (this.helperBestSuit === 'EXTRA') {
-      badgeText = '1';
-    } else if (this.helperBestCard) {
-      badgeText = ScorpionRules.cardText(this.helperBestCard);
+    // Build badge text: best card - total possible actions in current state
+    let badgeText = '0';
+    if (this.engine.gameState !== 'won' && this.engine.gameState !== 'stuck') {
+      if (this.helperBestSuit === 'EXTRA') {
+        badgeText = `${totalValidActions}`;
+      } else if (this.helperBestCard) {
+        const cardText = `${this.helperBestCard.rank}`;
+        badgeText = `${cardText} - ${totalValidActions}`;
+      }
     }
     this.scorpionHelperIndicator.textContent = badgeText;
 
