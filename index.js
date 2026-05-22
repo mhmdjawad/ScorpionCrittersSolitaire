@@ -988,9 +988,14 @@ class App {
     this.timeLabel = document.getElementById('timeLabel');
     this.scoreLabel = document.getElementById('scoreLabel');
 
+    this.menuBtn = document.getElementById('menuBtn');
+    this.menuDialog = document.getElementById('menuDialog');
+    this.menuLevelsBtn = document.getElementById('menuLevelsBtn');
+    this.menuRestartBtn = document.getElementById('menuRestartBtn');
+    this.menuAboutBtn = document.getElementById('menuAboutBtn');
+    this.aboutDialog = document.getElementById('aboutDialog');
     this.hintDialog = document.getElementById('hintDialog');
     this.hintList = document.getElementById('hintList');
-    this.levelsBtn = document.getElementById('levelsBtn');
     this.levelsDialog = document.getElementById('levelsDialog');
     this.levelTabs = document.getElementById('levelsTabs');
     this.levelTabCuratedBtn = document.getElementById('levelTabCurated');
@@ -1112,8 +1117,29 @@ class App {
   }
 
   bindButtons() {
-    this.levelsBtn.addEventListener('click', () => {
+    this.menuBtn?.addEventListener('click', () => {
+      this.openMenuDialog();
+    });
+
+    this.menuLevelsBtn?.addEventListener('click', () => {
+      if (this.menuDialog?.open) {
+        this.menuDialog.close();
+      }
       this.openLevelsDialog();
+    });
+
+    this.menuRestartBtn?.addEventListener('click', () => {
+      if (this.menuDialog?.open) {
+        this.menuDialog.close();
+      }
+      this.restartCurrentLevel();
+    });
+
+    this.menuAboutBtn?.addEventListener('click', () => {
+      if (this.menuDialog?.open) {
+        this.menuDialog.close();
+      }
+      this.openAboutDialog();
     });
 
     this.welcomeLevelsBtn?.addEventListener('click', () => {
@@ -1123,27 +1149,14 @@ class App {
       this.openLevelsDialog();
     });
 
-    document.getElementById('resetBtn').addEventListener('click', () => {
-      this.stopZenAuto();
-      this.engine.resetBoard();
-      this.notifiedState = 'playing';
-      this.hasSavedCurrentGame = false;
-      this.zen.undoBudget = 50;
-      this.zen.forbiddenMoves.clear();
-      this.zen.exhaustedStates.clear();
-      this.zen.pathDecisions = [];
-      this.zen.lastWinByAuto = false;
-      this.renderAll();
-    });
-
-    document.getElementById('undoBtn').addEventListener('click', () => {
+    document.getElementById('undoBtn')?.addEventListener('click', () => {
       this.engine.undo();
       this.zen.pathDecisions = [];
       this.notifiedState = 'playing';
       this.renderAll();
     });
 
-    document.getElementById('hintBtn').addEventListener('click', () => {
+    document.getElementById('hintBtn')?.addEventListener('click', () => {
       // Always add exactly 10 moves for using the hint button (but only once per click)
       this.engine.moves += 10;
 
@@ -1167,194 +1180,207 @@ class App {
             && recommendedStep.fromIndex === m.fromIndex
             && recommendedStep.toCol === m.toCol,
         }));
-        
-        // Sort by score descending
+
         scoredMoves.sort((a, b) => b.score - a.score);
-        
-        scoredMoves.forEach((item, i) => {
-          const m = item.move;
-          const target = this.engine.state.columns[m.toCol][this.engine.state.columns[m.toCol].length - 1];
-          const targetText = target ? ScorpionRules.cardText(target) : 'Empty';
-          
-          const moveRow = document.createElement('div');
-          moveRow.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid #eee; justify-content: space-between;';
-          
-          const moveInfo = document.createElement('div');
-          moveInfo.style.cssText = 'flex: 1;';
-          moveInfo.textContent = `${i + 1}. C${m.fromCol + 1} ${ScorpionRules.cardText(m.card)} → C${m.toCol + 1} ${targetText}`;
-          
-          const scoreLabel = document.createElement('div');
-          scoreLabel.style.cssText = item.isZenOptimal
-            ? 'background: #f0f0f0; color: #444; opacity: 0.45; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;'
-            : 'background: #f0f0f0; opacity: 0.2; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
-          scoreLabel.textContent = item.isZenOptimal ? '★' : '';
-          
-          const applyBtn = document.createElement('button');
-          applyBtn.textContent = 'Apply';
-          applyBtn.style.cssText = 'padding: 0.25rem 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;';
-          applyBtn.addEventListener('click', () => {
-            this.engine.moveStack(m.fromCol, m.fromIndex, m.toCol);
-            // Only add 1 move for using a suggested move (moveStack already adds 1)
-            this.notifiedState = 'playing';
-            this.hintDialog.close();
-            this.renderAll();
-          });
-          applyBtn.addEventListener('mouseenter', () => {
-            applyBtn.style.background = '#1976D2';
-          });
-          applyBtn.addEventListener('mouseleave', () => {
-            applyBtn.style.background = '#2196F3';
-          });
-          
-          moveRow.appendChild(moveInfo);
-          moveRow.appendChild(scoreLabel);
-          moveRow.appendChild(applyBtn);
-          this.hintList.appendChild(moveRow);
+
+        // Group moves by source card for cleaner display
+        const bySource = new Map();
+        for (const entry of scoredMoves.slice(0, 60)) {
+          const key = `${entry.move.fromCol}:${entry.move.fromIndex}`;
+          if (!bySource.has(key)) bySource.set(key, []);
+          bySource.get(key).push(entry);
+        }
+
+        let moveCount = 1;
+        bySource.forEach((group) => {
+          const top = group[0];
+          const card = top.move.card;
+          const cardName = ScorpionRules.cardText(card);
+          const fromCol = top.move.fromCol + 1;
+          const targets = group.map((entry) => {
+            const star = entry.isZenOptimal ? ' *BEST*' : '';
+            return `C-${entry.move.toCol + 1} (${entry.score})${star}`;
+          }).join(', ');
+          this.hintList.textContent += `${moveCount}. ${cardName} from C-${fromCol} -> ${targets}\n`;
+          moveCount += 1;
         });
 
         if (hasExtraSet) {
-          const isRecommendedDeal = Boolean(recommendedStep) && recommendedStep.type === 'deal';
-          const extraRow = document.createElement('div');
-          extraRow.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-bottom: 1px solid #eee; justify-content: space-between; background: #fafcff;';
-
-          const extraInfo = document.createElement('div');
-          extraInfo.style.cssText = 'flex: 1;';
-          extraInfo.textContent = 'Use Extra Set: DEAL C0 -> C1,C2,C3';
-
-          const extraScoreLabel = document.createElement('div');
-          extraScoreLabel.style.cssText = isRecommendedDeal
-            ? 'background: #f0f0f0; color: #444; opacity: 0.45; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;'
-            : 'background: #f0f0f0; opacity: 0.2; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.9rem; font-weight: bold; min-width: 50px; text-align: center;';
-          extraScoreLabel.textContent = isRecommendedDeal ? '★' : '';
-
-          const extraApplyBtn = document.createElement('button');
-          extraApplyBtn.textContent = 'Apply';
-          extraApplyBtn.style.cssText = 'padding: 0.25rem 0.75rem; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem;';
-          extraApplyBtn.addEventListener('click', () => {
-            this.engine.dealStock();
-            this.notifiedState = 'playing';
-            this.hintDialog.close();
-            this.renderAll();
-          });
-          extraApplyBtn.addEventListener('mouseenter', () => {
-            extraApplyBtn.style.background = '#1976D2';
-          });
-          extraApplyBtn.addEventListener('mouseleave', () => {
-            extraApplyBtn.style.background = '#2196F3';
-          });
-
-          extraRow.appendChild(extraInfo);
-          extraRow.appendChild(extraScoreLabel);
-          extraRow.appendChild(extraApplyBtn);
-          this.hintList.appendChild(extraRow);
+          this.hintList.textContent += `\nExtra move: Deal C-1 / C-2 / C-3 stock cards.`;
         }
       }
+
+      this.renderStatus();
       this.hintDialog.showModal();
     });
 
-    document.getElementById('playNewDeckBtn').addEventListener('click', () => {
-      if (this.levelRun?.mode === 'curated') {
-        const nextSeed = this.getNextPlayableSeedFromCurrent();
-        if (Number.isFinite(nextSeed)) {
-          this.startFreshGame(nextSeed, this.winDialog, { mode: 'curated' });
-          return;
+    document.getElementById('playNewDeckBtn')?.addEventListener('click', () => {
+      if (this.levelRun.mode === 'curated') {
+        const nextSeed = this.getNextCuratedSeed(this.engine.currentSeed) ?? this.getPlayableLevels()[0] ?? this.pickNonBlacklistedSeed();
+        if (this.winDialog?.open) {
+          this.winDialog.close();
         }
+        this.startFreshGame(nextSeed, this.winDialog, { mode: 'curated' });
+        return;
       }
 
+      const nextPlayedSeed = this.pickNonBlacklistedSeed();
       if (this.winDialog?.open) {
         this.winDialog.close();
       }
-      this.openLevelsDialog();
+      this.startFreshGame(nextPlayedSeed, this.winDialog, { mode: 'played' });
     });
 
     document.getElementById('replayLevelBtn')?.addEventListener('click', () => {
-      const currentSeed = Number(this.engine.currentSeed);
-      if (!Number.isFinite(currentSeed)) return;
-
-      const replayMode = this.levelRun?.mode === 'curated' || this.levelRun?.mode === 'played'
-        ? this.levelRun.mode
-        : 'custom';
-      this.startFreshGame(currentSeed, this.winDialog, { mode: replayMode });
+      const seed = this.engine.currentSeed;
+      if (this.winDialog?.open) {
+        this.winDialog.close();
+      }
+      this.startFreshGame(seed, this.winDialog, { mode: this.levelRun.mode || 'curated' });
     });
 
     document.getElementById('winMenuBtn')?.addEventListener('click', () => {
       if (this.winDialog?.open) {
         this.winDialog.close();
       }
-      this.openLevelsDialog();
+      this.openMenuDialog();
     });
 
-    this.saveScoreBtn.addEventListener('click', () => {
-      const saved = this.saveHighScore();
-      if (saved) {
-        this.hasSavedCurrentGame = true;
-        this.saveScoreBtn.disabled = true;
-        this.renderHighScores();
-      }
+    this.saveScoreBtn?.addEventListener('click', () => {
+      this.saveCurrentScore();
     });
 
-    document.getElementById('newAfterGameOverBtn').addEventListener('click', () => {
+    document.getElementById('newAfterGameOverBtn')?.addEventListener('click', () => {
       if (this.gameOverDialog?.open) {
         this.gameOverDialog.close();
       }
       this.openLevelsDialog();
     });
 
-    this.playSeedBtn.addEventListener('click', () => {
-      const seed = Number(this.seedInput.value.trim());
+    this.playSeedBtn?.addEventListener('click', () => {
+      const raw = this.seedInput.value.trim();
+      if (!raw) return;
+      const seed = Number(raw);
       if (!Number.isFinite(seed)) return;
-
-      this.startFreshGame(seed, this.gameOverDialog);
+      this.startFreshGame(seed, this.gameOverDialog, { mode: 'played' });
     });
 
-    this.clearScoresBtn.addEventListener('click', () => {
-      localStorage.removeItem('scorpionHighScores');
+    this.clearScoresBtn?.addEventListener('click', () => {
+      localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem(LEVEL_RECORDS_KEY);
       this.renderHighScores();
     });
 
-    this.highScoreList.addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const button = target.closest('[data-seed]');
-      if (!(button instanceof HTMLElement)) return;
-
-      const seed = Number(button.dataset.seed);
+    this.highScoreList?.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-seed]');
+      if (!btn) return;
+      const seed = Number(btn.dataset.seed);
       if (!Number.isFinite(seed)) return;
-
-      this.startFreshGame(seed, this.gameOverDialog);
+      this.startFreshGame(seed, this.gameOverDialog, { mode: 'played' });
     });
 
-    this.levelsList.addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const button = target.closest('[data-level-seed], [data-level-mode]');
-      if (!(button instanceof HTMLElement)) return;
-
-      if (button.dataset.levelMode === 'played') {
-        const playedSeed = Number(button.dataset.levelSeed);
-        if (!Number.isFinite(playedSeed)) return;
+    this.levelsList?.addEventListener('click', (event) => {
+      const tile = event.target.closest('[data-level-seed]');
+      if (!tile) return;
+      const seed = Number(tile.dataset.levelSeed);
+      if (!Number.isFinite(seed)) return;
+      const mode = tile.dataset.levelMode === 'played' ? 'played' : 'curated';
+      if (mode === 'played') {
+        const playedSeed = Number(tile.dataset.levelSeed);
         this.startFreshGame(playedSeed, this.levelsDialog, { mode: 'played' });
         return;
       }
-
-      const seed = Number(button.dataset.levelSeed);
-      if (!Number.isFinite(seed)) return;
-      if (!this.isPlayableLevelUnlockedBySeed(seed)) return;
 
       this.startFreshGame(seed, this.levelsDialog, { mode: 'curated' });
     });
 
     this.levelTabs?.addEventListener('click', (event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const button = target.closest('[data-level-tab]');
-      if (!(button instanceof HTMLElement)) return;
-      const tab = button.dataset.levelTab;
-      if (tab !== 'curated' && tab !== 'played') return;
+      const btn = event.target.closest('[data-level-tab]');
+      if (!btn) return;
+      const tab = btn.dataset.levelTab === 'played' ? 'played' : 'curated';
       this.activeLevelTab = tab;
       this.renderLevels();
     });
 
+    this.logoTrigger?.addEventListener('click', () => {
+      const now = Date.now();
+      if (now - this.lastLogoClickAt > 1200) {
+        this.logoClicks = 0;
+      }
+      this.logoClicks += 1;
+      this.lastLogoClickAt = now;
+
+      if (this.logoClicks >= 5) {
+        this.logoClicks = 0;
+        this.toggleZenPanel();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        this.engine.undo();
+        this.zen.pathDecisions = [];
+        this.notifiedState = 'playing';
+        this.renderAll();
+      }
+    });
+
+    this.zenAutoBtn?.addEventListener('click', () => {
+      this.toggleZenAuto();
+    });
+
+    this.zenPauseBtn?.addEventListener('click', () => {
+      this.stopZenAuto();
+    });
+
+    this.zenStepBtn?.addEventListener('click', async () => {
+      await this.runZenSingleStep();
+    });
+
+    this.zenInitialBtn?.addEventListener('click', () => {
+      this.dumpInitialDeckAndSeed();
+    });
+
+    this.zenStateBtn?.addEventListener('click', () => {
+      this.dumpCurrentState();
+    });
+
+    this.zenCloseBtn?.addEventListener('click', () => {
+      this.hideZenPanel();
+    });
+
+    this.zenLogClearBtn?.addEventListener('click', () => {
+      this.clearZenLog();
+    });
+
+    this.zenLogToggleBtn?.addEventListener('click', () => {
+      this.toggleZenLog();
+    });
+
+    this.zenDragHandle?.addEventListener('pointerdown', (event) => {
+      this.startZenDrag(event);
+    });
+
+    this.zenDragHandle?.addEventListener('pointermove', (event) => {
+      this.moveZenDrag(event);
+    });
+
+    this.zenDragHandle?.addEventListener('pointerup', (event) => {
+      this.endZenDrag(event);
+    });
+  }
+
+  restartCurrentLevel() {
+      this.stopZenAuto();
+      this.engine.resetBoard();
+      this.notifiedState = 'playing';
+      this.hasSavedCurrentGame = false;
+      this.zen.undoBudget = 50;
+      this.zen.forbiddenMoves.clear();
+      this.zen.exhaustedStates.clear();
+      this.zen.pathDecisions = [];
+      this.zen.lastWinByAuto = false;
     this.logoTrigger.addEventListener('click', () => {
       const now = Date.now();
       if (now - this.lastLogoClickAt > 1300) {
@@ -2519,6 +2545,18 @@ class App {
   showWelcome() {
     if (this.welcomeDialog) {
       this.welcomeDialog.showModal();
+    }
+  }
+
+  openMenuDialog() {
+    if (this.menuDialog && !this.menuDialog.open) {
+      this.menuDialog.showModal();
+    }
+  }
+
+  openAboutDialog() {
+    if (this.aboutDialog && !this.aboutDialog.open) {
+      this.aboutDialog.showModal();
     }
   }
 

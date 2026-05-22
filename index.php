@@ -1,9 +1,13 @@
+<?php
+
+$version = "2026-05-22-2";
+?>
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="app-build-version" content="20260517.2" />
+    <meta name="app-build-version" content="<?= $version ?>" />
     <title>Scorpion Critters Solitaire</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -11,7 +15,7 @@
       href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@400;600;700;800&family=Nunito:wght@500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="index.css?v=20260517.2" />
+    <link rel="stylesheet" href="index.css?<?=$version?>" />
   </head>
   <body>
     <div class="app-shell">
@@ -22,8 +26,7 @@
           <span>Scorpion Critters Solitaire</span>
         </h1>
         <div class="menu-buttons">
-          <button id="levelsBtn" class="btn mint">Levels</button>
-          <button id="resetBtn" class="btn">Reset Board</button>
+          <button id="menuBtn" class="btn warm">Menu</button>
           <button id="undoBtn" class="btn">Undo</button>
           <button id="hintBtn" class="btn mint">Hint</button>
         </div>
@@ -78,7 +81,7 @@
         completing full runs, and creating free spaces. Smart play earns much more than quick moves.
       </p>
       <p>
-        Open <strong>Levels</strong> to play solvable decks in order. Beat each unlocked level to open the next one,
+        Open <strong>Menu</strong> and choose <strong>Select Level</strong> to play solvable decks in order. Beat each unlocked level to open the next one,
         set your own best time and moves, and keep climbing.
       </p>
       <p class="welcome-cta">Pick your unlocked level and push for a cleaner record every run.</p>
@@ -109,6 +112,40 @@
         </button>
       </div>
       <div id="levelsList" class="levels-list"></div>
+      <form method="dialog" class="dialog-actions">
+        <button class="btn warm">Close</button>
+      </form>
+    </dialog>
+
+    <dialog id="menuDialog" class="hint-dialog menu-dialog">
+      <h2>Game Menu</h2>
+      <div class="menu-grid" aria-label="Game menu options">
+        <button id="menuLevelsBtn" type="button" class="menu-option btn mint">Select Level</button>
+        <button id="menuRestartBtn" type="button" class="menu-option btn">Restart Current Level</button>
+        <button id="menuAboutBtn" type="button" class="menu-option btn warm">About</button>
+      </div>
+      <form method="dialog" class="dialog-actions">
+        <button class="btn warm">Close</button>
+      </form>
+    </dialog>
+
+    <dialog id="aboutDialog" class="hint-dialog about-dialog">
+      <h2>About Scorpion Critters Solitaire</h2>
+      <div class="about-copy">
+        <p>
+          Scorpion Critters Solitaire is a playful Scorpion-style card game where you build four complete same-suit runs
+          from King 13 down to Ace 1 using the critter suits: 🐞, 🐸, 🐟, and 🐝.
+        </p>
+        <p>
+          Plan around hidden cards, create empty columns for Kings, and use the level picker to replay curated solvable decks
+          or chase better move and time records.
+        </p>
+      </div>
+      <section class="apk-section" aria-labelledby="apkSectionTitle">
+        <h3 id="apkSectionTitle">Get the Android APK</h3>
+        <p>Install the latest mobile build directly from the official download link.</p>
+        <a class="apk-link" href="https://pdemia.com/scs/app/app.apk" target="_blank" rel="noopener noreferrer">Download APK</a>
+      </section>
       <form method="dialog" class="dialog-actions">
         <button class="btn warm">Close</button>
       </form>
@@ -147,6 +184,6 @@
       <ol id="highScoreList" class="high-score-list"></ol>
     </dialog>
 
-    <script src="index.js?v=20260517.2"></script>
+    <script src="index.js?<?=$version?>"></script>
   </body>
 </html>

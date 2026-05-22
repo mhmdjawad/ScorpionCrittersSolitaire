@@ -4,10 +4,8 @@ const CACHE_PREFIX = 'scorpion-critters-';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_VERSION}`;
 const APP_ASSETS = [
   './',
-  './index.html',
-  `./index.css?v=${BUILD_VERSION}`,
-  `./index.js?v=${BUILD_VERSION}`,
-  './README.md',
+  `./index.css?${BUILD_VERSION}`,
+  `./index.js?${BUILD_VERSION}`,
 ];
 
 self.addEventListener('install', (event) => {

@@ -361,6 +361,70 @@ body {
   width: min(760px, 94vw);
 }
 
+.menu-dialog {
+  width: min(520px, 94vw);
+}
+
+.menu-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.menu-option {
+  width: 100%;
+  justify-content: center;
+  padding: 14px 16px;
+  font-size: 1.02rem;
+}
+
+.about-dialog {
+  width: min(760px, 94vw);
+}
+
+.about-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.apk-section {
+  margin-top: 12px;
+  padding: 14px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff2cf 0%, #fff8e7 100%);
+  border: 1px solid rgba(169, 126, 24, 0.2);
+}
+
+.apk-section h3 {
+  margin: 0 0 6px;
+  font-family: "Baloo 2", sans-serif;
+  color: #7b5710;
+}
+
+.apk-section p {
+  margin: 0 0 12px;
+}
+
+.apk-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 180px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  background: #f0b74b;
+  color: #3d2902;
+  font-family: "Baloo 2", sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.apk-link:hover {
+  filter: brightness(0.98);
+}
+
 .levels-tabs {
   display: flex;
   gap: 8px;
